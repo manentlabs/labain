@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+
+  name         String?
+  email        String   @unique
+  password     String?
+
+  plan         String   @default("FREE")
+  planExpiry   DateTime?
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime? @updatedAt
+
+  usages       Usage[]
+  transactions Transaction[]
+}
+
+model Usage {
+  id      String @id @default(cuid())
+  userId  String
+  feature String
+  date String // format: "YYYY-MM-DD"
+  count   Int    @default(0)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, feature, date])
+  @@index([userId, date])
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  order_id  String   @unique
+  user_id   String
+  plan      String
+  amount    Int
+  status    String   // pending, success, failed, expired
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
