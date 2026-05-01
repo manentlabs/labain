@@ -3,15 +3,21 @@ import Providers from "./providers";
 import Navbar from "./components/Navbar";
 import Script from "next/script"; 
 
-export default function RootLayout({ children }) {
+export default function RootLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
   return (
     <html lang="en">
       <body>
         <Providers>
           <Navbar />
           {children}
-		  <Script src="https://app.sandbox.midtrans.com/snap/snap.js" 
-			data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY} />
+          <Script
+            src="https://app.sandbox.midtrans.com/snap/snap.js"
+            data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
+          />
         </Providers>
       </body>
     </html>
