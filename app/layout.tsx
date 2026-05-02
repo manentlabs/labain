@@ -38,7 +38,7 @@ export const metadata = {
   ],
   metadataBase: new URL("https://labain.digital"),
   openGraph: {
-    title: "LabaAIn - AI UMKM Platform",
+    title: "LabAIn - AI UMKM Platform",
     description: "Bantu UMKM Indonesia berkembang dengan AI",
     url: "https://labain.digital",
     siteName: "LabAIn",
