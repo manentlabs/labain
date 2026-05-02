@@ -134,10 +134,13 @@ if (isMobile) {
           </h1>
         </div>
         {user && (
-          <span className="text-[11px] text-gray-400 truncate max-w-[140px]">
-            {user.email}
-          </span>
-        )}
+		  <Link
+			href="/update_profile"
+			className="text-[11px] text-gray-400 truncate max-w-[140px] hover:text-emerald-600 transition-colors"
+		  >
+			{user.email}
+		  </Link>
+		)}
       </header>
 
       <div className="h-12" />
@@ -164,11 +167,11 @@ if (isMobile) {
         })}
 
         <Link
-          href={user ? "/profile" : "/register"}
-          className="w-10 h-10 rounded-full bg-emerald-600 grid place-items-center shadow-md shadow-emerald-200"
-        >
-          <Icon.Profile active={false} />
-        </Link>
+		  href={user ? "/plan" : "/register"}
+		  className="w-10 h-10 rounded-full bg-emerald-600 grid place-items-center shadow-md shadow-emerald-200"
+		>
+		  <Icon.Profile />
+		</Link>
 
         {mobileNavItems.slice(2).map((item) => {
           const active = pathname === item.href;
