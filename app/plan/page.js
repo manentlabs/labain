@@ -170,12 +170,12 @@ function PlanCard({ planKey, plan, isActive, isFeatured, onUpgrade }) {
             onMouseOver={e => (e.currentTarget.style.opacity = "0.85")}
             onMouseOut={e => (e.currentTarget.style.opacity = "1")}
             onClick={() =>
-			  onUpgrade({
-				key: planKey,
-				label: plan.label,
-				price: plan.price,
-			  })
-			}
+              onUpgrade({
+                key: planKey,
+                label: plan.label,
+                price: plan.price,
+              })
+            }
           >
             {planKey === "FREE" ? "Downgrade ke Free" : `Upgrade ke ${plan.label}`}
           </button>
@@ -190,14 +190,12 @@ function PaymentModal({ plan, onClose }) {
   const [orderId, setOrderId] = useState(null);
   const pollRef = useRef(null);
 
-  // Bersihkan interval saat komponen unmount
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
 
-  // Mulai polling setelah orderId tersedia
   useEffect(() => {
     if (!orderId) return;
 
@@ -208,25 +206,21 @@ function PaymentModal({ plan, onClose }) {
         const status = data?.transaction_status;
 
         if (status === "settlement" || status === "capture") {
-          // Pembayaran berhasil
           clearInterval(pollRef.current);
           onClose();
           window.location.reload();
         } else if (status === "cancel" || status === "deny" || status === "expire") {
-          // Pembayaran gagal/expired
           clearInterval(pollRef.current);
           onClose();
         }
-        // status "pending" → lanjut polling
       } catch {
-        // Abaikan error jaringan, polling tetap jalan
+        // abaikan error jaringan
       }
     }, 3000);
 
     return () => clearInterval(pollRef.current);
   }, [orderId]);
 
-  // Buat transaksi & buka Snap
   useEffect(() => {
     const startPayment = async () => {
       try {
@@ -246,16 +240,12 @@ function PaymentModal({ plan, onClose }) {
             onClose();
             window.location.reload();
           },
-          onPending: () => {
-            // Snap tutup tapi status pending — polling tetap aktif
-          },
+          onPending: () => {},
           onError: () => {
             clearInterval(pollRef.current);
             onClose();
           },
-          onClose: () => {
-            // User tutup popup — polling tetap aktif sampai expire/sukses
-          },
+          onClose: () => {},
         });
       } catch {
         setLoading(false);
@@ -317,87 +307,124 @@ export default function PlanPage() {
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: "0 auto", padding: "2rem 1.25rem", fontFamily: "'DM Sans','Segoe UI',sans-serif" }}>
+    <>
+      <style>{`
+        @media (max-width: 640px) {
+          .plan-wrapper { padding: 1.25rem 1rem !important; }
+          .plan-title   { font-size: 16px !important; margin-bottom: 2px !important; }
+          .plan-subtitle { font-size: 12px !important; margin-bottom: 24px !important; }
+          .usage-label  { margin-bottom: 8px !important; }
+          .usage-grid   { grid-template-columns: repeat(2, 1fr) !important; gap: 8px !important; }
+          .usage-card   { padding: 10px 12px !important; border-radius: 12px !important; }
+          .usage-value  { font-size: 16px !important; }
+          .plans-grid   {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 12px !important;
+          }
+          .plan-section { margin-bottom: 28px !important; }
+        }
+        @media (min-width: 641px) {
+          .plans-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+          }
+        }
+      `}</style>
 
-      <h1 style={{ fontSize: 18, fontWeight: 500, color: "#111827", marginBottom: 4 }}>
-        Plan &amp; Penggunaan
-      </h1>
-      <p style={{ fontSize: 13, color: "#9ca3af", marginBottom: 32 }}>
-        Kelola langganan dan pantau penggunaan harian kamu.
-      </p>
-
-      {/* ── USAGE ── */}
-      <section style={{ marginBottom: 36 }}>
-        <p style={{ fontSize: 11, fontWeight: 500, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>
-          Penggunaan hari ini
+      <div
+        className="plan-wrapper"
+        style={{ maxWidth: 720, margin: "0 auto", padding: "2rem 1.25rem", fontFamily: "'DM Sans','Segoe UI',sans-serif" }}
+      >
+        <h1 className="plan-title" style={{ fontSize: 18, fontWeight: 500, color: "#111827", marginBottom: 4 }}>
+          Plan &amp; Penggunaan
+        </h1>
+        <p className="plan-subtitle" style={{ fontSize: 13, color: "#9ca3af", marginBottom: 32 }}>
+          Kelola langganan dan pantau penggunaan harian kamu.
         </p>
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-          gap: 10,
-        }}>
-          {data?.usage?.map(({ feature, used, limit }) => (
-            <div key={feature} style={{
-              background: "#fff",
-              border: "0.5px solid #f0f0f0",
-              borderRadius: 14,
-              padding: "12px 14px",
-            }}>
-              <p style={{ fontSize: 11, color: "#9ca3af", marginBottom: 4 }}>
-                {FEATURES_LABEL[feature] ?? feature}
-              </p>
-              <p style={{ fontSize: 18, fontWeight: 500, color: "#111827" }}>
-                {used}{" "}
-                <span style={{ fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>
-                  / {limit >= 999 ? "∞" : limit}
-                </span>
-              </p>
-              <UsageBar used={used} limit={limit} />
-            </div>
-          ))}
-        </div>
 
-        {data?.planExpiry && (
-          <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 10 }}>
-            Plan aktif hingga:{" "}
-            <span style={{ color: "#6b7280", fontWeight: 500 }}>
-              {new Date(data.planExpiry).toLocaleDateString("id-ID", {
-                day: "numeric", month: "long", year: "numeric",
-              })}
-            </span>
+        {/* ── USAGE ── */}
+        <section className="plan-section" style={{ marginBottom: 36 }}>
+          <p
+            className="usage-label"
+            style={{ fontSize: 11, fontWeight: 500, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}
+          >
+            Penggunaan hari ini
           </p>
+          <div
+            className="usage-grid"
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+              gap: 10,
+            }}
+          >
+            {data?.usage?.map(({ feature, used, limit }) => (
+              <div
+                key={feature}
+                className="usage-card"
+                style={{
+                  background: "#fff",
+                  border: "0.5px solid #f0f0f0",
+                  borderRadius: 14,
+                  padding: "12px 14px",
+                }}
+              >
+                <p style={{ fontSize: 11, color: "#9ca3af", marginBottom: 4 }}>
+                  {FEATURES_LABEL[feature] ?? feature}
+                </p>
+                <p className="usage-value" style={{ fontSize: 18, fontWeight: 500, color: "#111827" }}>
+                  {used}{" "}
+                  <span style={{ fontSize: 12, fontWeight: 400, color: "#9ca3af" }}>
+                    / {limit >= 999 ? "∞" : limit}
+                  </span>
+                </p>
+                <UsageBar used={used} limit={limit} />
+              </div>
+            ))}
+          </div>
+
+          {data?.planExpiry && (
+            <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 10 }}>
+              Plan aktif hingga:{" "}
+              <span style={{ color: "#6b7280", fontWeight: 500 }}>
+                {new Date(data.planExpiry).toLocaleDateString("id-ID", {
+                  day: "numeric", month: "long", year: "numeric",
+                })}
+              </span>
+            </p>
+          )}
+        </section>
+
+        {/* ── PLANS ── */}
+        <section>
+          <p
+            style={{ fontSize: 11, fontWeight: 500, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}
+          >
+            Pilih plan
+          </p>
+          <div className="plans-grid">
+            {Object.keys(PLANS).map(key => (
+              <PlanCard
+                key={key}
+                planKey={key}
+                plan={PLANS[key]}
+                isActive={(data?.plan ?? "FREE") === key}
+                isFeatured={key === "PRO"}
+                onUpgrade={selectedPlan => {
+                  if (key === "FREE") alert("Konfirmasi downgrade?");
+                  else setShowPayment(selectedPlan);
+                }}
+              />
+            ))}
+          </div>
+        </section>
+
+        {showPayment && (
+          <PaymentModal plan={showPayment} onClose={() => setShowPayment(null)} />
         )}
-      </section>
-
-      {/* ── PLANS ── */}
-      <section>
-        <p style={{ fontSize: 11, fontWeight: 500, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>
-          Pilih plan
-        </p>
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-          gap: 12,
-        }}>
-          {Object.keys(PLANS).map(key => (
-            <PlanCard
-              key={key}
-              planKey={key}
-              plan={PLANS[key]}
-              isActive={(data?.plan ?? "FREE") === key}
-              isFeatured={key === "PRO"}
-              onUpgrade={selectedPlan => {
-                if (key === "FREE") alert("Konfirmasi downgrade?");
-                else setShowPayment(selectedPlan);
-              }}
-            />
-          ))}
-        </div>
-      </section>
-
-      {showPayment && (
-        <PaymentModal plan={showPayment} onClose={() => setShowPayment(null)} />
-      )}
-    </div>
+      </div>
+    </>
   );
 }
