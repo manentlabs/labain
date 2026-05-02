@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useSession } from "next-auth/react";
+import { useSession, signOut } from "next-auth/react";
 
 const s = {
   page: {
@@ -225,6 +225,14 @@ export default function UpdateProfilePage() {
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [loadingPassword, setLoadingPassword] = useState(false);
   const [toast, setToast] = useState({ message: "", type: "success" });
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   useEffect(() => {
     if (session?.user) {
@@ -343,6 +351,39 @@ export default function UpdateProfilePage() {
             <p style={{ fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 2 }}>Login via Google</p>
             <p style={{ fontSize: 11, color: "#9ca3af", lineHeight: 1.5 }}>Password dikelola melalui pengaturan akun Google kamu.</p>
           </div>
+        </div>
+      )}
+
+      {/* Tombol logout — hanya tampil di mobile */}
+      {isMobile && (
+        <div style={{ marginTop: 8, marginBottom: 80 }}>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            style={{
+              width: "100%",
+              padding: "11px 0",
+              borderRadius: 9,
+              border: "0.5px solid #fee2e2",
+              fontSize: 13,
+              fontWeight: 500,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              background: "#fff",
+              color: "#ef4444",
+              transition: "background 0.15s",
+            }}
+            onMouseOver={e => e.currentTarget.style.background = "#fef2f2"}
+            onMouseOut={e => e.currentTarget.style.background = "#fff"}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <path d="M10 11l3-3-3-3M13 8H6M6 3H3a1 1 0 00-1 1v8a1 1 0 001 1h3"
+                stroke="#ef4444" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Keluar dari akun
+          </button>
         </div>
       )}
 
