@@ -2,6 +2,7 @@ import "./globals.css";
 import Providers from "./providers";
 import Navbar from "./components/Navbar";
 import Script from "next/script"; 
+import { ReactNode } from "react";
 
 export default function RootLayout({
   children,

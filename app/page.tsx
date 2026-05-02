@@ -26,7 +26,8 @@ async function getStats() {
     const totalContent = usageAgg._sum.count ?? 0;
 
     // Hitung total menit dihemat berdasarkan fitur yang dipakai
-    const totalMinutesSaved = usageByFeature.reduce((acc, row) => {
+    const totalMinutesSaved = usageByFeature.reduce(
+    (acc: number, row: any) => {
       const featureName = row.feature.toLowerCase();
       const minutesPerUse =
         MINUTES_SAVED_PER_FEATURE[featureName] ??
