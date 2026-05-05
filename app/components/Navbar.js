@@ -84,9 +84,10 @@ export default function Navbar() {
   const [expanded, setExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const { data: session, status } = useSession();
+
   const user = session?.user;
-  
-  if (status === "loading") return null;
+
+  // ❗ SEMUA useEffect HARUS DI ATAS CONDITIONAL RETURN
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
@@ -94,7 +95,6 @@ export default function Navbar() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e) => {
@@ -104,21 +104,18 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
 
-  const logout = () => signOut({ callbackUrl: "/login" });
-
-  const initials = user?.email ? user.email.slice(0, 2).toUpperCase() : "??";
-
-  const [userPlan, setUserPlan] = useState("FREE");
-  
   useEffect(() => {
-	  if (!user?.email) return;
+    if (!user) return;
 
-	  fetch("/api/user/plan")
-		.then(res => res.json())
-		.then(data => {
-		  setUserPlan(data.plan || "FREE");
-		});
-	}, [user?.email]);
+    fetch("/api/user/plan")
+      .then(res => res.json())
+      .then(data => {
+        setUserPlan(data.plan || "FREE");
+      });
+  }, [user]);
+
+  // ❗ BARU boleh conditional AFTER hooks
+  if (status === "loading") return null;
 
 if (isMobile) {
   return (
