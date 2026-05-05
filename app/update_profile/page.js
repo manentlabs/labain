@@ -200,7 +200,9 @@ function Toast({ message, type }) {
     }}>
       {isError ? (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
         </svg>
       ) : (
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -214,7 +216,9 @@ function Toast({ message, type }) {
 
 export default function UpdateProfilePage() {
   const { data: session, update: updateSession } = useSession();
-  const isGoogleAccount = session?.user?.image?.includes("googleusercontent.com") || !session?.user?.hasPassword;
+
+  // ✅ Deteksi Google account dari hasPassword yang di-inject ke session
+  const isGoogleAccount = session?.user?.hasPassword === false;
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -314,16 +318,36 @@ export default function UpdateProfilePage() {
             <span style={s.sectionDot} />
             Informasi Profil
           </p>
-          <Field label="Nama lengkap" value={name} onChange={setName} placeholder="Nama kamu" fieldKey="name" focusedKey={focusedKey} setFocusedKey={setFocusedKey} />
-          <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="email@kamu.com"
-            hint={isGoogleAccount ? "Email terhubung dengan Google." : "Mengubah email akan mempengaruhi login kamu."}
-            fieldKey="email" focusedKey={focusedKey} setFocusedKey={setFocusedKey}
+          <Field
+            label="Nama lengkap"
+            value={name}
+            onChange={setName}
+            placeholder="Nama kamu"
+            fieldKey="name"
+            focusedKey={focusedKey}
+            setFocusedKey={setFocusedKey}
           />
-          <SaveButton loading={loadingProfile} disabled={!profileChanged} onClick={handleSaveProfile} label="Simpan profil" />
+          <Field
+            label="Email"
+            type="email"
+            value={email}
+            onChange={setEmail}
+            placeholder="email@kamu.com"
+            hint={isGoogleAccount ? "Email terhubung dengan Google." : "Mengubah email akan mempengaruhi login kamu."}
+            fieldKey="email"
+            focusedKey={focusedKey}
+            setFocusedKey={setFocusedKey}
+          />
+          <SaveButton
+            loading={loadingProfile}
+            disabled={!profileChanged}
+            onClick={handleSaveProfile}
+            label="Simpan profil"
+          />
         </div>
       </div>
 
-      {/* Password card */}
+      {/* Password card — hanya tampil untuk akun email */}
       {!isGoogleAccount ? (
         <div style={s.card}>
           <div style={s.sectionLast}>
@@ -331,10 +355,42 @@ export default function UpdateProfilePage() {
               <span style={s.sectionDot} />
               Ubah Password
             </p>
-            <Field label="Password saat ini" type="password" value={currentPassword} onChange={setCurrentPassword} placeholder="••••••••" fieldKey="currentPassword" focusedKey={focusedKey} setFocusedKey={setFocusedKey} />
-            <Field label="Password baru" type="password" value={newPassword} onChange={setNewPassword} placeholder="••••••••" fieldKey="newPassword" focusedKey={focusedKey} setFocusedKey={setFocusedKey} />
-            <Field label="Konfirmasi password baru" type="password" value={confirmPassword} onChange={setConfirmPassword} placeholder="••••••••" fieldKey="confirmPassword" focusedKey={focusedKey} setFocusedKey={setFocusedKey} />
-            <SaveButton loading={loadingPassword} disabled={!passwordFilled} onClick={handleSavePassword} label="Ubah password" />
+            <Field
+              label="Password saat ini"
+              type="password"
+              value={currentPassword}
+              onChange={setCurrentPassword}
+              placeholder="••••••••"
+              fieldKey="currentPassword"
+              focusedKey={focusedKey}
+              setFocusedKey={setFocusedKey}
+            />
+            <Field
+              label="Password baru"
+              type="password"
+              value={newPassword}
+              onChange={setNewPassword}
+              placeholder="••••••••"
+              fieldKey="newPassword"
+              focusedKey={focusedKey}
+              setFocusedKey={setFocusedKey}
+            />
+            <Field
+              label="Konfirmasi password baru"
+              type="password"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              placeholder="••••••••"
+              fieldKey="confirmPassword"
+              focusedKey={focusedKey}
+              setFocusedKey={setFocusedKey}
+            />
+            <SaveButton
+              loading={loadingPassword}
+              disabled={!passwordFilled}
+              onClick={handleSavePassword}
+              label="Ubah password"
+            />
           </div>
         </div>
       ) : (
@@ -375,12 +431,17 @@ export default function UpdateProfilePage() {
               color: "#ef4444",
               transition: "background 0.15s",
             }}
-            onMouseOver={e => e.currentTarget.style.background = "#fef2f2"}
-            onMouseOut={e => e.currentTarget.style.background = "#fff"}
+            onMouseOver={(e) => e.currentTarget.style.background = "#fef2f2"}
+            onMouseOut={(e) => e.currentTarget.style.background = "#fff"}
           >
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-              <path d="M10 11l3-3-3-3M13 8H6M6 3H3a1 1 0 00-1 1v8a1 1 0 001 1h3"
-                stroke="#ef4444" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+              <path
+                d="M10 11l3-3-3-3M13 8H6M6 3H3a1 1 0 00-1 1v8a1 1 0 001 1h3"
+                stroke="#ef4444"
+                strokeWidth="1.3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
             </svg>
             Keluar dari akun
           </button>

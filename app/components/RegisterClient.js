@@ -23,35 +23,36 @@ export default function RegisterClient({ totalUsers }) {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!validate()) return;
-    if (loading) return;
+	  e.preventDefault();
+	  if (!validate()) return;
+	  if (loading) return;
 
-    setErrors({});
-    setLoading(true);
+	  setErrors({});
+	  setLoading(true);
 
-    try {
-      const res = await fetch("/api/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+	  try {
+		const res = await fetch("/api/register", {
+		  method: "POST",
+		  headers: { "Content-Type": "application/json" },
+		  body: JSON.stringify(form),
+		});
 
-      let data = {};
-      try { data = await res.json(); } catch {}
+		let data = {};
+		try { data = await res.json(); } catch {}
 
-      if (!res.ok) {
-        setErrors({ general: data.error || "Gagal register" });
-        setLoading(false);
-        return;
-      }
+		if (!res.ok) {
+		  setErrors({ general: data.error || "Gagal register" });
+		  setLoading(false);
+		  return;
+		}
 
-      router.push("/plan");
-    } catch {
-      setErrors({ general: "Server error" });
-      setLoading(false);
-    }
-  };
+		// ✅ Arahkan ke halaman cek email dulu
+		router.push(`/check-email?email=${encodeURIComponent(form.email)}`);
+	  } catch {
+		setErrors({ general: "Server error" });
+		setLoading(false);
+	  }
+	};
 
   const handleGoogle = async () => {
     setGoogleLoading(true);

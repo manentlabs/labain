@@ -8,17 +8,35 @@ datasource db {
 }
 
 model User {
-  id         String    @id @default(cuid())
-  name       String?
-  email      String    @unique
-  password   String?
-  plan       String    @default("FREE")
-  planExpiry DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime? @updatedAt
+  id            String   @id @default(cuid())
+  name          String?
+  email         String   @unique
+  password      String?
+  
+  plan          String   @default("FREE")
+  planExpiry    DateTime?
 
-  usages       Usage[]
-  transactions Transaction[]
+  isVerified    Boolean  @default(false)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // RELATIONS
+  usages        Usage[]
+  transactions  Transaction[]
+  verifications EmailVerification?
+}
+
+model EmailVerification {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
 }
 
 model Usage {
@@ -41,6 +59,7 @@ model Transaction {
   plan      String
   amount    Int
   status    String
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
