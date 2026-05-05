@@ -83,9 +83,13 @@ export default function Navbar() {
   const [isMobile, setIsMobile] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [userPlan, setUserPlan] = useState("FREE");
   const { data: session, status } = useSession();
 
   const user = session?.user;
+  const initials = user?.email
+  ? user.email.slice(0, 2).toUpperCase()
+  : "??";
 
   // ❗ SEMUA useEffect HARUS DI ATAS CONDITIONAL RETURN
   useEffect(() => {
@@ -113,8 +117,11 @@ export default function Navbar() {
         setUserPlan(data.plan || "FREE");
       });
   }, [user]);
+  
+  const logout = () => {
+    signOut({ callbackUrl: "/login" });
+  };
 
-  // ❗ BARU boleh conditional AFTER hooks
   if (status === "loading") return null;
 
 if (isMobile) {
