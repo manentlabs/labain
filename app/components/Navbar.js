@@ -83,9 +83,10 @@ export default function Navbar() {
   const [isMobile, setIsMobile] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const user = session?.user;
-
+  
+  if (status === "loading") return null;
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
@@ -110,14 +111,14 @@ export default function Navbar() {
   const [userPlan, setUserPlan] = useState("FREE");
   
   useEffect(() => {
-	  if (!user) return;
+	  if (!user?.email) return;
 
 	  fetch("/api/user/plan")
 		.then(res => res.json())
 		.then(data => {
 		  setUserPlan(data.plan || "FREE");
 		});
-	}, [user]);
+	}, [user?.email]);
 
 if (isMobile) {
   return (

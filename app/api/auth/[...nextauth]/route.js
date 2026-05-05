@@ -4,11 +4,41 @@ import { prisma } from "@/app/lib/prisma";
 
 export const authOptions = {
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-    }),
-  ],
+	  GoogleProvider({
+		clientId: process.env.GOOGLE_CLIENT_ID,
+		clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+	  }),
+
+	  CredentialsProvider({
+		name: "credentials",
+		credentials: {
+		  email: {},
+		  password: {},
+		},
+
+		async authorize(credentials) {
+		  const user = await prisma.user.findUnique({
+			where: { email: credentials.email },
+		  });
+
+		  if (!user) return null;
+
+		  const valid = await bcrypt.compare(
+			credentials.password,
+			user.password
+		  );
+
+		  if (!valid) return null;
+
+		  return {
+			id: user.id,
+			email: user.email,
+			name: user.name,
+		  };
+		},
+	  }),
+	],
+
   events: {
     async signIn({ user }) {
       const existing = await prisma.user.findUnique({

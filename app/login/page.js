@@ -52,30 +52,27 @@ export default function LoginPage() {
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (loading) return;
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Login gagal");
-        setLoading(false);
-        return;
-      }
-      window.location.href = "/";
-    } catch (err) {
-      console.error(err);
-      setError("Server error");
-      setLoading(false);
-    }
-  };
+const handleSubmit = async (e) => {
+  e.preventDefault();
+
+  setLoading(true);
+  setError("");
+
+  const res = await signIn("credentials", {
+    email: form.email,
+    password: form.password,
+    redirect: false,
+  });
+
+  setLoading(false);
+
+  if (res?.error) {
+    setError("Email atau password salah");
+    return;
+  }
+
+  router.push("/");
+};
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
