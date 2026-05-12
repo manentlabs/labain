@@ -13,11 +13,25 @@ const businessTypes = [
   { label: "Lainnya", icon: "✨" },
 ];
 
+const gayaOptions = [
+  { key: "minimalis", label: "Minimalis", desc: "Simple & clean", icon: "◻️" },
+  { key: "modern", label: "Modern", desc: "Bold & confident", icon: "⚡" },
+  { key: "tradisional", label: "Tradisional", desc: "Local & warm", icon: "🏮" },
+  { key: "playful", label: "Playful", desc: "Friendly & fun", icon: "🎨" },
+];
+
 const SparkIcon = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
     stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z" />
   </svg>
+);
+
+const ResultRow = ({ label, value }) => (
+  <div>
+    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">{label}</p>
+    <p className="text-sm text-gray-700 leading-relaxed">{value}</p>
+  </div>
 );
 
 export default function LogoPage() {
@@ -27,9 +41,12 @@ export default function LogoPage() {
     namaUsaha: "",
     jenis: "",
     filosofi: "",
+    gaya: "minimalis",
+    warnaPrimer: "",
   });
 
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState("");
   const [result, setResult] = useState(null);
   const [step, setStep] = useState(1);
   const [showLimitModal, setShowLimitModal] = useState(false);
@@ -39,22 +56,18 @@ export default function LogoPage() {
 
   const isStep1Valid = form.namaUsaha.trim() && form.jenis;
   const isStep2Valid = form.filosofi.trim();
-  
+
   const downloadImage = (url) => {
-	  if (!url) return;
-
-	  // Nama file yang akan disimpan
-	  const fileName = `Logo-${form.namaUsaha.replace(/\s+/g, "-") || "Usaha"}.png`;
-
-	  // Arahkan ke API Proxy kita
-	  // Ini akan memicu download otomatis secara native oleh browser
-	  window.location.href = `/api/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(fileName)}`;
-	};
+    if (!url) return;
+    const fileName = `Logo-${form.namaUsaha.replace(/\s+/g, "-") || "Usaha"}.png`;
+    window.location.href = `/api/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(fileName)}`;
+  };
 
   const generate = async () => {
     setLoading(true);
     setResult(null);
     setError("");
+    setLoadingStep("Merancang konsep logo...");
 
     try {
       const res = await fetch("/api/logo", {
@@ -63,6 +76,7 @@ export default function LogoPage() {
         body: JSON.stringify(form),
       });
 
+      setLoadingStep("Membuat gambar logo...");
       const data = await res.json();
 
       if (!res.ok) {
@@ -75,9 +89,10 @@ export default function LogoPage() {
 
       setResult(data.logo);
     } catch (e) {
-      setError("Gagal generate logo. Coba lagi.");
+      setError(e.message || "Gagal generate logo. Coba lagi.");
     } finally {
       setLoading(false);
+      setLoadingStep("");
     }
   };
 
@@ -91,30 +106,31 @@ export default function LogoPage() {
             <SparkIcon />
             AI Logo Generator
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">
-            Generator Logo Usaha
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900">Generator Logo Usaha</h1>
           <p className="text-gray-400 text-sm mt-1.5">
-            Buat logo + filosofi brand otomatis dari AI.
+            Buat logo + konsep brand otomatis dari AI.
           </p>
         </div>
 
         {/* Step indicator */}
         <div className="flex gap-2 mb-5">
-          <div className={`h-1 flex-1 rounded-full ${step >= 1 ? "bg-emerald-500" : "bg-gray-200"}`} />
-          <div className={`h-1 flex-1 rounded-full ${step >= 2 ? "bg-emerald-500" : "bg-gray-200"}`} />
+          {[1, 2].map((s) => (
+            <div key={s} className={`h-1 flex-1 rounded-full transition-all ${step >= s ? "bg-emerald-500" : "bg-gray-200"}`} />
+          ))}
         </div>
 
-        {/* STEP 1 */}
+        {/* STEP 1 — Nama & Jenis */}
         {step === 1 && (
           <div className="bg-white border border-gray-100 rounded-2xl p-6 space-y-5">
-
-            <input
-              className="w-full border rounded-xl px-4 py-3 text-sm bg-gray-50"
-              placeholder="Nama usaha kamu"
-              value={form.namaUsaha}
-              onChange={(e) => set("namaUsaha", e.target.value)}
-            />
+            <div>
+              <p className="text-xs font-semibold text-gray-400 mb-2">Nama Usaha</p>
+              <input
+                className="w-full border rounded-xl px-4 py-3 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                placeholder="Contoh: Warung Bu Sari, Toko Batik Nusantara"
+                value={form.namaUsaha}
+                onChange={(e) => set("namaUsaha", e.target.value)}
+              />
+            </div>
 
             <div>
               <p className="text-xs font-semibold text-gray-400 mb-3">Jenis Usaha</p>
@@ -123,10 +139,10 @@ export default function LogoPage() {
                   <button
                     key={b.label}
                     onClick={() => set("jenis", b.label)}
-                    className={`p-3 rounded-xl border text-xs flex flex-col items-center gap-1 ${
+                    className={`p-3 rounded-xl border text-xs flex flex-col items-center gap-1 transition-all ${
                       form.jenis === b.label
-                        ? "bg-emerald-500 text-white"
-                        : "bg-gray-50"
+                        ? "bg-emerald-500 text-white border-emerald-500"
+                        : "bg-gray-50 hover:border-emerald-300"
                     }`}
                   >
                     <span className="text-lg">{b.icon}</span>
@@ -139,110 +155,194 @@ export default function LogoPage() {
             <button
               onClick={() => setStep(2)}
               disabled={!isStep1Valid}
-              className="w-full bg-emerald-500 text-white py-3 rounded-xl text-sm font-semibold disabled:opacity-40"
+              className="w-full bg-emerald-500 text-white py-3 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
             >
               Lanjut →
             </button>
           </div>
         )}
 
-        {/* STEP 2 */}
+        {/* STEP 2 — Filosofi, Gaya & Warna */}
         {step === 2 && (
           <div className="bg-white border border-gray-100 rounded-2xl p-6 space-y-5">
 
-            <div className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg inline-block">
+            {/* Badge info */}
+            <div className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg inline-block font-medium">
               {form.namaUsaha} • {form.jenis}
             </div>
 
-            <textarea
-              className="w-full border rounded-xl px-4 py-3 text-sm bg-gray-50"
-              rows={5}
-              placeholder="Ceritakan filosofi usaha kamu (misal: sederhana, premium, tradisional, modern, dll)"
-              value={form.filosofi}
-              onChange={(e) => set("filosofi", e.target.value)}
-            />
+            {/* Filosofi */}
+            <div>
+              <p className="text-xs font-semibold text-gray-400 mb-2">Filosofi Usaha</p>
+              <textarea
+                className="w-full border rounded-xl px-4 py-3 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                rows={4}
+                placeholder="Ceritakan nilai atau filosofi usahamu. Contoh: 'Kami hadir untuk membawa cita rasa tradisional dengan sentuhan modern, terjangkau untuk semua kalangan.'"
+                value={form.filosofi}
+                onChange={(e) => set("filosofi", e.target.value)}
+              />
+            </div>
+
+            {/* Gaya Visual */}
+            <div>
+              <p className="text-xs font-semibold text-gray-400 mb-3">Gaya Visual Logo</p>
+              <div className="grid grid-cols-2 gap-2">
+                {gayaOptions.map((g) => (
+                  <button
+                    key={g.key}
+                    onClick={() => set("gaya", g.key)}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      form.gaya === g.key
+                        ? "bg-emerald-500 text-white border-emerald-500"
+                        : "bg-gray-50 hover:border-emerald-300"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span>{g.icon}</span>
+                      <span className="text-sm font-semibold">{g.label}</span>
+                    </div>
+                    <p className={`text-xs ${form.gaya === g.key ? "text-emerald-100" : "text-gray-400"}`}>
+                      {g.desc}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Warna Primer (opsional) */}
+            <div>
+              <p className="text-xs font-semibold text-gray-400 mb-2">
+                Warna yang Diinginkan <span className="font-normal">(opsional)</span>
+              </p>
+              <input
+                className="w-full border rounded-xl px-4 py-3 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+                placeholder="Contoh: hijau tua, biru navy, merah bata, #FF6B35"
+                value={form.warnaPrimer}
+                onChange={(e) => set("warnaPrimer", e.target.value)}
+              />
+            </div>
 
             <div className="flex gap-2">
               <button
                 onClick={() => setStep(1)}
-                className="flex-1 border py-3 rounded-xl text-sm"
+                className="flex-1 border py-3 rounded-xl text-sm hover:bg-gray-50 transition-all"
               >
                 Kembali
               </button>
-
               <button
                 onClick={generate}
                 disabled={!isStep2Valid || loading}
-                className="flex-[2] bg-emerald-500 text-white py-3 rounded-xl text-sm font-semibold"
+                className="flex-[2] bg-emerald-500 text-white py-3 rounded-xl text-sm font-semibold disabled:opacity-40 transition-all"
               >
-                {loading ? "Generating..." : "Generate Logo"}
+                {loading ? loadingStep || "Generating..." : "✨ Generate Logo"}
               </button>
             </div>
 
             {error && (
-              <p className="text-sm text-red-500">{error}</p>
+              <div className="bg-red-50 border border-red-100 text-red-500 text-sm px-4 py-3 rounded-xl">
+                {error}
+              </div>
             )}
           </div>
         )}
 
         {/* RESULT */}
-		{result && (
-		  <div className="mt-6 bg-white border rounded-2xl p-6 space-y-4">
+        {result && (
+          <div className="mt-6 space-y-4">
 
-			<div>
-			  <p className="text-xs text-gray-400">Konsep Logo</p>
-			  <p className="text-sm text-gray-700">{result.konsep}</p>
-			</div>
+            {/* Gambar Logo */}
+            <div className="bg-white border border-gray-100 rounded-2xl p-6 text-center">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Logo Generated</p>
+              {result.image ? (
+                <>
+                  <div className="bg-gray-50 rounded-xl p-6 inline-block mb-4">
+                    <img
+                      src={result.image}
+                      alt={`Logo ${form.namaUsaha}`}
+                      className="w-48 h-48 object-contain mx-auto"
+                    />
+                  </div>
+                  <button
+                    onClick={() => downloadImage(result.image)}
+                    className="w-full bg-emerald-50 text-emerald-600 py-3 rounded-xl text-sm font-semibold hover:bg-emerald-100 transition-all"
+                  >
+                    ⬇️ Download Logo
+                  </button>
+                </>
+              ) : (
+                <div className="bg-gray-50 rounded-xl p-8 text-gray-400 text-sm">
+                  {result.imageError || "Gambar tidak tersedia"}
+                </div>
+              )}
+            </div>
 
-			<div className="border-t" />
+            {/* Konsep & Detail Brand */}
+            <div className="bg-white border border-gray-100 rounded-2xl p-6 space-y-4">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Konsep Brand</p>
 
-			<div>
-			  <p className="text-xs text-gray-400">Filosofi Logo</p>
-			  <p className="text-sm text-gray-700">{result.filosofi}</p>
-			</div>
+              <ResultRow label="Konsep" value={result.konsep} />
+              <div className="border-t" />
+              <ResultRow label="Elemen Visual" value={result.elemenVisual} />
+              <div className="border-t" />
+              <ResultRow label="Filosofi Desain" value={result.filosofiDesain} />
+              <div className="border-t" />
 
-			<div className="border-t" />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Palet Warna</p>
+                  <p className="text-sm text-gray-700">{result.palet}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Tipografi</p>
+                  <p className="text-sm text-gray-700">{result.tipografi}</p>
+                </div>
+              </div>
 
-			<div>
-			  <p className="text-xs text-gray-400">Deskripsi Logo</p>
-			  <p className="text-sm text-gray-700">{result.deskripsi}</p>
-			</div>
+              {/* Gaya badge */}
+              {result.gaya && (
+                <>
+                  <div className="border-t" />
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400">Gaya:</span>
+                    <span className="text-xs bg-emerald-50 text-emerald-600 font-semibold px-2 py-0.5 rounded-full">
+                      {result.gaya}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
 
-			<div className="border-t" />
-
-			{/* IMAGE */}
-			<div className="text-center">
-			  <img
-				src={result.image}
-				alt="logo"
-				className="mx-auto w-40 h-40 object-contain"
-			  />
-			</div>
-
-
-			<button 
-			  onClick={() => downloadImage(result.image)}
-			  className="w-full bg-emerald-50 text-emerald-600 py-3 rounded-xl text-sm font-semibold hover:bg-emerald-100 transition-all"
-			>
-			  Download Logo
-			</button>
-		  </div>
-		)}
+            {/* Generate ulang */}
+            <button
+              onClick={generate}
+              disabled={loading}
+              className="w-full border border-emerald-200 text-emerald-600 py-3 rounded-xl text-sm font-semibold hover:bg-emerald-50 transition-all disabled:opacity-40"
+            >
+              {loading ? "Generating..." : "🔄 Generate Ulang"}
+            </button>
+          </div>
+        )}
 
         {/* LIMIT MODAL */}
         {showLimitModal && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
-            <div className="bg-white p-6 rounded-2xl w-[90%] max-w-sm text-center">
-              <h2 className="font-bold">Limit habis</h2>
-              <p className="text-sm text-gray-400 mt-2">
-                Upgrade untuk lanjut generate logo
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+            <div className="bg-white p-6 rounded-2xl w-[90%] max-w-sm text-center shadow-xl">
+              <div className="text-3xl mb-3">🚀</div>
+              <h2 className="font-bold text-gray-900">Limit Habis</h2>
+              <p className="text-sm text-gray-400 mt-2 mb-4">
+                Upgrade untuk terus generate logo tanpa batas
               </p>
-
               <button
                 onClick={() => router.push("/plan")}
-                className="w-full mt-4 bg-emerald-500 text-white py-2 rounded-xl"
+                className="w-full bg-emerald-500 text-white py-2.5 rounded-xl font-semibold text-sm"
               >
-                Upgrade
+                Upgrade Sekarang
+              </button>
+              <button
+                onClick={() => setShowLimitModal(false)}
+                className="w-full mt-2 text-gray-400 text-sm py-2"
+              >
+                Nanti saja
               </button>
             </div>
           </div>
