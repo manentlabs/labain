@@ -247,8 +247,7 @@ export default function LogoPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        // SESUDAH
-		if (res.status === 401) {
+        if (res.status === 401) {
 		  setError("Silakan login terlebih dahulu.");
 		  return;
 		}
