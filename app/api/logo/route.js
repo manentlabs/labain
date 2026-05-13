@@ -5,10 +5,51 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+const gayaGuide = {
+  minimalis: {
+    label: "Ultra-minimalist",
+    desc: "Single geometric shape or lettermark. Absolute negative space. No more than 2 colors. Think Apple, Nike.",
+    dalleSuffix: "ultra-minimalist flat vector logo, single clean shape, maximum negative space, 2 solid colors only",
+  },
+  modern: {
+    label: "Modern & Bold",
+    desc: "Strong typography, one geometric accent. Clean and confident.",
+    dalleSuffix: "modern bold flat vector logo, strong clean typography, one geometric accent shape, limited color palette",
+  },
+  tradisional: {
+    label: "Traditional & Warm",
+    desc: "Inspired by local Indonesian craft motifs — simplified and stylized, not decorative.",
+    dalleSuffix: "flat vector logo inspired by Indonesian traditional motifs, simplified and stylized, warm color palette, clean lines",
+  },
+  playful: {
+    label: "Playful & Friendly",
+    desc: "Rounded shapes, friendly character or icon, approachable feel.",
+    dalleSuffix: "playful flat vector logo, rounded friendly shapes, simple character or icon, bright limited palette",
+  },
+};
+
+// Potong prompt jika terlalu panjang — DALL-E max ~4000 karakter
+function truncatePrompt(prompt, maxChars = 3800) {
+  if (prompt.length <= maxChars) return prompt;
+  return prompt.slice(0, maxChars).trimEnd() + "...";
+}
+
+async function tryGenerate(prompt) {
+  const result = await openai.images.generate({
+    model: "dall-e-3",
+    prompt: truncatePrompt(prompt),
+    size: "1024x1024",
+    quality: "standard",
+    style: "natural",
+    n: 1,
+  });
+  return result.data?.[0]?.url ?? null;
+}
+
 export const POST = withUsageCheck("logo", async (req, session) => {
   const { namaUsaha, jenis, filosofi, gaya, warnaPrimer } = await req.json();
 
-  // ── VALIDASI ─────────────────────────────────────────────────────────
+  // ── VALIDASI ──────────────────────────────────────────────────────────
   if (!namaUsaha?.trim())
     return Response.json({ error: "Nama usaha wajib diisi" }, { status: 400 });
   if (!jenis?.trim())
@@ -18,63 +59,44 @@ export const POST = withUsageCheck("logo", async (req, session) => {
   if (!process.env.OPENAI_API_KEY)
     return Response.json({ error: "API Key tidak ditemukan" }, { status: 500 });
 
-  // ── PANDUAN GAYA ──────────────────────────────────────────────────────
-  const gayaGuide = {
-    minimalis: {
-      label: "Ultra-minimalist",
-      desc: "Single geometric shape or lettermark. Absolute negative space. No more than 2 colors. Think Apple, Nike.",
-      dalleSuffix: "ultra-minimalist flat vector logo, single clean shape, maximum negative space, 2 solid colors only",
-    },
-    modern: {
-      label: "Modern & Bold",
-      desc: "Strong typography, one geometric accent. Clean and confident.",
-      dalleSuffix: "modern bold flat vector logo, strong clean typography, one geometric accent shape, limited color palette",
-    },
-    tradisional: {
-      label: "Traditional & Warm",
-      desc: "Inspired by local Indonesian craft motifs — simplified and stylized, not decorative.",
-      dalleSuffix: "flat vector logo inspired by Indonesian traditional motifs, simplified and stylized, warm color palette, clean lines",
-    },
-    playful: {
-      label: "Playful & Friendly",
-      desc: "Rounded shapes, friendly character or icon, approachable feel.",
-      dalleSuffix: "playful flat vector logo, rounded friendly shapes, simple character or icon, bright limited palette",
-    },
-  };
-
   const selectedGaya = gayaGuide[gaya] ?? gayaGuide.minimalis;
 
-  // ── STEP 1: GENERATE KONSEP LOGO ─────────────────────────────────────
+  // ── STEP 1: KONSEP LOGO ───────────────────────────────────────────────
   const conceptPrompt = `Kamu sedang merancang logo untuk UMKM berikut:
 
 Nama Usaha: ${namaUsaha}
 Jenis Usaha: ${jenis}
 Filosofi pemilik: ${filosofi}
-Gaya visual yang diinginkan: ${selectedGaya.label} — ${selectedGaya.desc}
-${warnaPrimer ? `Warna yang diinginkan pemilik: ${warnaPrimer}` : ""}
+Gaya visual: ${selectedGaya.label} — ${selectedGaya.desc}
+${warnaPrimer ? `Warna diinginkan: ${warnaPrimer}` : ""}
 
 ## Tugasmu
 Rancang konsep logo yang:
-1. Merepresentasikan esensi usaha ini — bukan logo generik untuk jenis usaha sejenis
-2. Mengandung satu elemen visual utama (ikon simpel, bentuk geometris, atau modifikasi huruf)
-3. Punya alasan desain yang jelas dan bisa dijelaskan ke pemilik UMKM
+1. Merepresentasikan esensi usaha ini secara unik — bukan logo generik
+2. Mengandung SATU elemen visual utama (ikon simpel, bentuk geometris, atau modifikasi huruf)
+3. Punya alasan desain yang bisa dijelaskan ke pemilik UMKM
 
 ## Larangan Keras
-- JANGAN gradasi (gradient)
-- JANGAN bayangan (shadow/drop-shadow)  
-- JANGAN efek 3D atau bevel
+- JANGAN gradasi, bayangan, efek 3D, atau bevel
 - JANGAN lebih dari 3 warna
-- JANGAN elemen dekoratif yang tidak punya makna
+- JANGAN elemen dekoratif tanpa makna
 
-## Output JSON
-Balas HANYA JSON valid ini:
+## Untuk promptImage — WAJIB ikuti aturan ini:
+- Mulai dengan: "Flat vector logo of"
+- Deskripsikan SATU bentuk utama saja (lingkaran, segitiga, daun, mangkok, dll)
+- Sebutkan warna eksak (contoh: navy blue, forest green, warm red)
+- Maksimal 200 karakter — singkat tapi spesifik
+- JANGAN sebut nama brand atau nama orang
+- JANGAN gunakan kata: realistic, photo, 3D, shadow, gradient
+
+## Output JSON:
 {
-  "konsep": "Satu kalimat: apa yang direpresentasikan logo ini dan mengapa relevan untuk ${namaUsaha}",
-  "elemenVisual": "Deskripsi elemen utama: bentuk, simbol, atau huruf yang dipilih — dan apa maknanya",
-  "palet": "2–3 warna spesifik dalam format nama warna atau hex, beserta alasan singkat pemilihannya",
-  "tipografi": "Rekomendasi karakter font (misal: sans-serif bold, slab serif, rounded) yang cocok untuk nama usaha ini",
-  "filosofiDesain": "2–3 kalimat: bagaimana desain ini mencerminkan filosofi '${filosofi}' dari pemilik",
-  "promptImage": "Prompt DALL-E 3 dalam Bahasa Inggris yang sangat spesifik: sebutkan nama bentuk, warna eksak, posisi elemen, gaya, dan background. Mulai dengan 'Flat vector logo of'"
+  "konsep": "Satu kalimat tentang representasi logo untuk ${namaUsaha}",
+  "elemenVisual": "Elemen utama: bentuk/simbol yang dipilih dan maknanya",
+  "palet": "2–3 warna spesifik beserta alasan singkat",
+  "tipografi": "Karakter font yang direkomendasikan",
+  "filosofiDesain": "2–3 kalimat bagaimana desain mencerminkan filosofi pemilik",
+  "promptImage": "Flat vector logo of [SATU bentuk sederhana], [warna], white background, minimal, clean"
 }`;
 
   let conceptData;
@@ -85,9 +107,9 @@ Balas HANYA JSON valid ini:
         {
           role: "system",
           content:
-            "You are a world-class logo designer specializing in minimalist brand identity for small businesses. " +
-            "You believe every design element must earn its place — nothing decorative, everything meaningful. " +
-            "Your DALL-E prompts are precise: you name exact shapes, colors, and positions so the AI renders exactly what you intend. " +
+            "You are a world-class logo designer for small businesses. " +
+            "Every design element must earn its place — nothing decorative, everything meaningful. " +
+            "Your DALL-E prompts are short (under 200 chars), safe, and specific: one shape, exact colors, white background. " +
             "Reply only with valid JSON.",
         },
         { role: "user", content: conceptPrompt },
@@ -106,38 +128,58 @@ Balas HANYA JSON valid ini:
   }
 
   // Validasi field konsep
-  const requiredConceptFields = ["konsep", "elemenVisual", "palet", "tipografi", "filosofiDesain", "promptImage"];
-  for (const field of requiredConceptFields) {
+  const requiredFields = ["konsep", "elemenVisual", "palet", "tipografi", "filosofiDesain", "promptImage"];
+  for (const field of requiredFields) {
     if (!conceptData[field])
       return Response.json({ error: `Field konsep '${field}' tidak lengkap` }, { status: 500 });
   }
 
-  // ── STEP 2: GENERATE GAMBAR LOGO ─────────────────────────────────────
-  // Suffix wajib untuk memastikan output bersih dan cocok untuk logo
+  // ── STEP 2: GENERATE GAMBAR ───────────────────────────────────────────
   const qualitySuffix =
-    `${selectedGaya.dalleSuffix}, ` +
-    "isolated on pure white background, no text unless specified, " +
-    "no gradients, no shadows, no 3D effects, no decorative borders, " +
-    "suitable for professional branding, scalable design";
+    `${selectedGaya.dalleSuffix}, isolated on pure white background, ` +
+    "no gradients, no shadows, no 3D effects, professional branding";
 
-  const finalImagePrompt = `${conceptData.promptImage}, ${qualitySuffix}`;
+  // Prompt utama: gabungan konsep AI + suffix teknis
+  const primaryPrompt = `${conceptData.promptImage}, ${qualitySuffix}`;
+
+  // Prompt fallback: lebih pendek, aman, tanpa nama brand
+  const primaryColor = warnaPrimer
+    ? warnaPrimer.split(",")[0].trim()
+    : conceptData.palet?.split(",")?.[0]?.trim() ?? "navy blue";
+
+  const fallbackPrompt =
+    `Flat vector logo for a ${jenis} business, single simple ${primaryColor} icon, ` +
+    `${selectedGaya.dalleSuffix}, white background, no text, no gradients, no shadows, professional`;
 
   let imageUrl = null;
   let imageError = null;
+  let usedFallback = false;
 
+  // Coba prompt utama
   try {
-    const image = await openai.images.generate({
-      model: "dall-e-3",
-      prompt: finalImagePrompt,
-      size: "1024x1024",
-      quality: "standard",
-      style: "natural", // "natural" lebih cocok untuk logo flat vs "vivid" yang dramatis
-      n: 1,
-    });
-    imageUrl = image.data?.[0]?.url ?? null;
-  } catch (imgErr) {
-    console.error("DALL-E error:", imgErr);
-    imageError = "Gambar gagal dibuat, namun konsep logo berhasil dihasilkan.";
+    imageUrl = await tryGenerate(primaryPrompt);
+  } catch (primaryErr) {
+    console.error("DALL-E primary failed:", primaryErr?.message);
+
+    // Retry dengan fallback jika error content policy atau 400
+    const shouldRetry =
+      primaryErr?.status === 400 ||
+      primaryErr?.message?.includes("content_policy") ||
+      primaryErr?.message?.includes("safety") ||
+      primaryErr?.message?.includes("maximum");
+
+    if (shouldRetry) {
+      try {
+        console.log("Retrying with fallback prompt...");
+        imageUrl = await tryGenerate(fallbackPrompt);
+        usedFallback = true;
+      } catch (fallbackErr) {
+        console.error("DALL-E fallback failed:", fallbackErr?.message);
+        imageError = "Gambar gagal dibuat. Klik Generate Ulang untuk coba lagi.";
+      }
+    } else {
+      imageError = "Gambar gagal dibuat. Klik Generate Ulang untuk coba lagi.";
+    }
   }
 
   return Response.json({
@@ -149,9 +191,10 @@ Balas HANYA JSON valid ini:
       palet: conceptData.palet,
       tipografi: conceptData.tipografi,
       filosofiDesain: conceptData.filosofiDesain,
-      promptImage: finalImagePrompt,
+      promptImage: usedFallback ? fallbackPrompt : primaryPrompt,
       image: imageUrl,
       ...(imageError && { imageError }),
+      ...(usedFallback && { note: "Logo dibuat dengan prompt sederhana karena prompt utama ditolak." }),
     },
   });
 });
