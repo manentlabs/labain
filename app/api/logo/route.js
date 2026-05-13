@@ -28,28 +28,52 @@ const gayaGuide = {
   },
 };
 
-// Potong prompt jika terlalu panjang — DALL-E max ~4000 karakter
-function truncatePrompt(prompt, maxChars = 3800) {
+function truncatePrompt(prompt, maxChars = 900) {
   if (prompt.length <= maxChars) return prompt;
-  return prompt.slice(0, maxChars).trimEnd() + "...";
+  return prompt.slice(0, maxChars).trimEnd();
 }
 
-async function tryGenerate(prompt) {
-  const result = await openai.images.generate({
-    model: "dall-e-3",
-    prompt: truncatePrompt(prompt),
+// Coba dall-e-3, fallback ke dall-e-2 jika tidak tersedia
+async function generateImage(prompt) {
+  // — Percobaan 1: dall-e-3
+  try {
+    const result = await openai.images.generate({
+      model: "dall-e-3",
+      prompt: truncatePrompt(prompt),
+      size: "1024x1024",
+      quality: "standard",
+      style: "natural",
+      n: 1,
+    });
+    return { url: result.data?.[0]?.url ?? null, model: "dall-e-3" };
+  } catch (err3) {
+    const msg = err3?.message ?? "";
+    console.error("DALL-E 3 failed:", msg);
+
+    // Hanya fallback jika memang model tidak tersedia / tier tidak cukup
+    const isModelUnavailable =
+      msg.includes("does not exist") ||
+      msg.includes("model_not_found") ||
+      msg.includes("unsupported") ||
+      err3?.status === 404;
+
+    if (!isModelUnavailable) throw err3; // Error lain (content policy, dll) — lempar
+  }
+
+  // — Percobaan 2: dall-e-2 (tersedia di semua tier)
+  console.log("Falling back to dall-e-2...");
+  const result2 = await openai.images.generate({
+    model: "dall-e-2",
+    prompt: truncatePrompt(prompt, 900), // dall-e-2 max 1000 chars
     size: "1024x1024",
-    quality: "standard",
-    style: "natural",
     n: 1,
   });
-  return result.data?.[0]?.url ?? null;
+  return { url: result2.data?.[0]?.url ?? null, model: "dall-e-2" };
 }
 
 export const POST = withUsageCheck("logo", async (req, session) => {
   const { namaUsaha, jenis, filosofi, gaya, warnaPrimer } = await req.json();
 
-  // ── VALIDASI ──────────────────────────────────────────────────────────
   if (!namaUsaha?.trim())
     return Response.json({ error: "Nama usaha wajib diisi" }, { status: 400 });
   if (!jenis?.trim())
@@ -85,7 +109,7 @@ Rancang konsep logo yang:
 - Mulai dengan: "Flat vector logo of"
 - Deskripsikan SATU bentuk utama saja (lingkaran, segitiga, daun, mangkok, dll)
 - Sebutkan warna eksak (contoh: navy blue, forest green, warm red)
-- Maksimal 200 karakter — singkat tapi spesifik
+- Maksimal 150 karakter — singkat tapi spesifik
 - JANGAN sebut nama brand atau nama orang
 - JANGAN gunakan kata: realistic, photo, 3D, shadow, gradient
 
@@ -109,7 +133,7 @@ Rancang konsep logo yang:
           content:
             "You are a world-class logo designer for small businesses. " +
             "Every design element must earn its place — nothing decorative, everything meaningful. " +
-            "Your DALL-E prompts are short (under 200 chars), safe, and specific: one shape, exact colors, white background. " +
+            "Your DALL-E prompts are short (under 150 chars), safe, and specific: one shape, exact colors, white background. " +
             "Reply only with valid JSON.",
         },
         { role: "user", content: conceptPrompt },
@@ -127,7 +151,6 @@ Rancang konsep logo yang:
     return Response.json({ error: "Gagal membuat konsep logo" }, { status: 500 });
   }
 
-  // Validasi field konsep
   const requiredFields = ["konsep", "elemenVisual", "palet", "tipografi", "filosofiDesain", "promptImage"];
   for (const field of requiredFields) {
     if (!conceptData[field])
@@ -139,10 +162,8 @@ Rancang konsep logo yang:
     `${selectedGaya.dalleSuffix}, isolated on pure white background, ` +
     "no gradients, no shadows, no 3D effects, professional branding";
 
-  // Prompt utama: gabungan konsep AI + suffix teknis
   const primaryPrompt = `${conceptData.promptImage}, ${qualitySuffix}`;
 
-  // Prompt fallback: lebih pendek, aman, tanpa nama brand
   const primaryColor = warnaPrimer
     ? warnaPrimer.split(",")[0].trim()
     : conceptData.palet?.split(",")?.[0]?.trim() ?? "navy blue";
@@ -154,27 +175,27 @@ Rancang konsep logo yang:
   let imageUrl = null;
   let imageError = null;
   let usedFallback = false;
+  let modelUsed = null;
 
-  // Coba prompt utama
+  // — Coba primary prompt
   try {
-    imageUrl = await tryGenerate(primaryPrompt);
+    ({ url: imageUrl, model: modelUsed } = await generateImage(primaryPrompt));
   } catch (primaryErr) {
-    console.error("DALL-E primary failed:", primaryErr?.message);
+    console.error("Primary prompt failed:", primaryErr?.message);
 
-    // Retry dengan fallback jika error content policy atau 400
-    const shouldRetry =
+    const isContentPolicy =
       primaryErr?.status === 400 ||
       primaryErr?.message?.includes("content_policy") ||
-      primaryErr?.message?.includes("safety") ||
-      primaryErr?.message?.includes("maximum");
+      primaryErr?.message?.includes("safety");
 
-    if (shouldRetry) {
+    if (isContentPolicy) {
+      // — Coba fallback prompt (lebih aman, tanpa nama brand)
       try {
-        console.log("Retrying with fallback prompt...");
-        imageUrl = await tryGenerate(fallbackPrompt);
+        console.log("Retrying with safe fallback prompt...");
+        ({ url: imageUrl, model: modelUsed } = await generateImage(fallbackPrompt));
         usedFallback = true;
       } catch (fallbackErr) {
-        console.error("DALL-E fallback failed:", fallbackErr?.message);
+        console.error("Fallback prompt also failed:", fallbackErr?.message);
         imageError = "Gambar gagal dibuat. Klik Generate Ulang untuk coba lagi.";
       }
     } else {
@@ -193,8 +214,9 @@ Rancang konsep logo yang:
       filosofiDesain: conceptData.filosofiDesain,
       promptImage: usedFallback ? fallbackPrompt : primaryPrompt,
       image: imageUrl,
+      modelUsed,
       ...(imageError && { imageError }),
-      ...(usedFallback && { note: "Logo dibuat dengan prompt sederhana karena prompt utama ditolak." }),
+      ...(usedFallback && { note: "Logo dibuat dengan prompt sederhana." }),
     },
   });
 });
