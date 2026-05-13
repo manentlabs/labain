@@ -1,5 +1,8 @@
 import { withUsageCheck } from "@/app/lib/withUsageCheck";
 import OpenAI from "openai";
+import { writeFile } from "fs/promises";
+import { randomUUID } from "crypto";
+import path from "path";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -33,29 +36,37 @@ function truncatePrompt(prompt, maxChars = 900) {
   return prompt.slice(0, maxChars).trimEnd();
 }
 
-// Coba dall-e-3, fallback ke dall-e-2 jika tidak tersedia
 async function generateImage(prompt) {
-  try {
-    const result = await openai.images.generate({
-      model: "gpt-image-1",
-      prompt: truncatePrompt(prompt),
-      size: "1024x1024",
-      quality: "medium", // gpt-image-1: low | medium | high | auto
-      n: 1,
-    });
-    return { url: result.data?.[0]?.url ?? null, model: "gpt-image-1" };
-  } catch (err1) {
-    console.error("gpt-image-1 failed:", err1?.message);
+  const result = await openai.images.generate({
+    model: "gpt-image-1",
+    prompt: truncatePrompt(prompt),
+    size: "1024x1024",
+    quality: "medium",
+    n: 1,
+  });
 
-    const result2 = await openai.images.generate({
-      model: "gpt-image-2",
-      prompt: truncatePrompt(prompt),
-      size: "1024x1024",
-      quality: "medium",
-      n: 1,
-    });
-    return { url: result2.data?.[0]?.url ?? null, model: "gpt-image-2" };
+  const item = result.data?.[0];
+  if (!item) throw new Error("Tidak ada data gambar");
+
+  // gpt-image-1 selalu mengembalikan b64_json
+  const b64 = item.b64_json ?? item.url ?? null;
+  if (!b64) throw new Error("Format respons tidak dikenali");
+
+  // Jika b64_json: simpan ke public/tmp sebagai file PNG
+  // agar tidak dikirim sebagai JSON payload besar
+  if (item.b64_json) {
+    const filename = `logo-${randomUUID()}.png`;
+    const filepath = path.join(process.cwd(), "public", "tmp", filename);
+
+    await writeFile(filepath, Buffer.from(item.b64_json, "base64"));
+
+    return {
+      url: `/tmp/${filename}`,
+      model: "gpt-image-1",
+    };
   }
+
+  return { url: item.url, model: "gpt-image-1" };
 }
 
 export const POST = withUsageCheck("logo", async (req, session) => {
@@ -94,9 +105,9 @@ Rancang konsep logo yang:
 
 ## Untuk promptImage — WAJIB ikuti aturan ini:
 - Mulai dengan: "Flat vector logo of"
-- Deskripsikan SATU bentuk utama saja (lingkaran, segitiga, daun, mangkok, dll)
-- Sebutkan warna eksak (contoh: navy blue, forest green, warm red)
-- Maksimal 150 karakter — singkat tapi spesifik
+- Deskripsikan SATU bentuk utama saja
+- Sebutkan warna eksak (contoh: navy blue, forest green)
+- Maksimal 150 karakter
 - JANGAN sebut nama brand atau nama orang
 - JANGAN gunakan kata: realistic, photo, 3D, shadow, gradient
 
@@ -119,8 +130,6 @@ Rancang konsep logo yang:
           role: "system",
           content:
             "You are a world-class logo designer for small businesses. " +
-            "Every design element must earn its place — nothing decorative, everything meaningful. " +
-            "Your DALL-E prompts are short (under 150 chars), safe, and specific: one shape, exact colors, white background. " +
             "Reply only with valid JSON.",
         },
         { role: "user", content: conceptPrompt },
@@ -141,7 +150,7 @@ Rancang konsep logo yang:
   const requiredFields = ["konsep", "elemenVisual", "palet", "tipografi", "filosofiDesain", "promptImage"];
   for (const field of requiredFields) {
     if (!conceptData[field])
-      return Response.json({ error: `Field konsep '${field}' tidak lengkap` }, { status: 500 });
+      return Response.json({ error: `Field '${field}' tidak lengkap` }, { status: 500 });
   }
 
   // ── STEP 2: GENERATE GAMBAR ───────────────────────────────────────────
@@ -159,34 +168,37 @@ Rancang konsep logo yang:
     `Flat vector logo for a ${jenis} business, single simple ${primaryColor} icon, ` +
     `${selectedGaya.dalleSuffix}, white background, no text, no gradients, no shadows, professional`;
 
+  // Pastikan folder public/tmp ada
+  try {
+    const { mkdir } = await import("fs/promises");
+    await mkdir(path.join(process.cwd(), "public", "tmp"), { recursive: true });
+  } catch (_) {}
+
   let imageUrl = null;
   let imageError = null;
   let usedFallback = false;
   let modelUsed = null;
 
-  // — Coba primary prompt
   try {
     ({ url: imageUrl, model: modelUsed } = await generateImage(primaryPrompt));
   } catch (primaryErr) {
     console.error("Primary prompt failed:", primaryErr?.message);
 
     const isContentPolicy =
-      primaryErr?.status === 400 ||
       primaryErr?.message?.includes("content_policy") ||
-      primaryErr?.message?.includes("safety");
+      primaryErr?.message?.includes("safety") ||
+      primaryErr?.message?.includes("rejected");
 
     if (isContentPolicy) {
-      // — Coba fallback prompt (lebih aman, tanpa nama brand)
       try {
-        console.log("Retrying with safe fallback prompt...");
         ({ url: imageUrl, model: modelUsed } = await generateImage(fallbackPrompt));
         usedFallback = true;
       } catch (fallbackErr) {
-        console.error("Fallback prompt also failed:", fallbackErr?.message);
+        console.error("Fallback also failed:", fallbackErr?.message);
         imageError = "Gambar gagal dibuat. Klik Generate Ulang untuk coba lagi.";
       }
     } else {
-      imageError = "Gambar gagal dibuat. Klik Generate Ulang untuk coba lagi.";
+      imageError = `Gambar gagal: ${primaryErr?.message ?? "Error tidak diketahui"}`;
     }
   }
 
