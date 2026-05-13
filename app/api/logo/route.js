@@ -35,25 +35,23 @@ function truncatePrompt(prompt, maxChars = 900) {
 
 // Coba dall-e-3, fallback ke dall-e-2 jika tidak tersedia
 async function generateImage(prompt) {
-  // Coba gpt-image-1 (model image generation yang tersedia)
   try {
     const result = await openai.images.generate({
       model: "gpt-image-1",
       prompt: truncatePrompt(prompt),
       size: "1024x1024",
-      quality: "standard",
+      quality: "medium", // gpt-image-1: low | medium | high | auto
       n: 1,
     });
     return { url: result.data?.[0]?.url ?? null, model: "gpt-image-1" };
   } catch (err1) {
     console.error("gpt-image-1 failed:", err1?.message);
 
-    // Fallback ke gpt-image-2
     const result2 = await openai.images.generate({
       model: "gpt-image-2",
       prompt: truncatePrompt(prompt),
       size: "1024x1024",
-      quality: "standard",
+      quality: "medium",
       n: 1,
     });
     return { url: result2.data?.[0]?.url ?? null, model: "gpt-image-2" };
