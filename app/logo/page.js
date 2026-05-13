@@ -247,10 +247,17 @@ export default function LogoPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        if (res.status === 402 || data?.error === "LIMIT_REACHED") {
-          setShowLimitModal(true);
-          return;
-        }
+        // SESUDAH
+		if (res.status === 401) {
+		  setError("Silakan login terlebih dahulu.");
+		  return;
+		}
+		if (res.status === 403 || res.status === 402) {
+		  setShowLimitModal(true);
+		  setLoading(false);   // ← jangan lupa ini
+		  setLoadingStep("");
+		  return;
+		}
         throw new Error(data?.error || "Gagal generate logo");
       }
 
