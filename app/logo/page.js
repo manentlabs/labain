@@ -51,16 +51,51 @@ export default function LogoPage() {
   const [step, setStep] = useState(1);
   const [showLimitModal, setShowLimitModal] = useState(false);
   const [error, setError] = useState("");
+  const [downloading, setDownloading] = useState(false);
 
   const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
 
   const isStep1Valid = form.namaUsaha.trim() && form.jenis;
   const isStep2Valid = form.filosofi.trim();
 
-  const downloadImage = (url) => {
-    if (!url) return;
+  // Download gambar — support URL path (/tmp/...) maupun data URL
+  const downloadImage = async (imageUrl) => {
+    if (!imageUrl) return;
+    setDownloading(true);
+
     const fileName = `Logo-${form.namaUsaha.replace(/\s+/g, "-") || "Usaha"}.png`;
-    window.location.href = `/api/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(fileName)}`;
+
+    try {
+      // Jika path relatif (/tmp/...), fetch dulu lalu blob
+      if (imageUrl.startsWith("/")) {
+        const res = await fetch(imageUrl);
+        if (!res.ok) throw new Error("Gagal mengambil file");
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = fileName;
+        a.click();
+        URL.revokeObjectURL(blobUrl);
+        return;
+      }
+
+      // Jika data URL (base64)
+      if (imageUrl.startsWith("data:")) {
+        const a = document.createElement("a");
+        a.href = imageUrl;
+        a.download = fileName;
+        a.click();
+        return;
+      }
+
+      // Jika URL eksternal — pakai proxy download
+      window.location.href = `/api/download?url=${encodeURIComponent(imageUrl)}&name=${encodeURIComponent(fileName)}`;
+    } catch (e) {
+      alert("Gagal download. Coba klik kanan gambar → Save Image.");
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const generate = async () => {
@@ -119,7 +154,7 @@ export default function LogoPage() {
           ))}
         </div>
 
-        {/* STEP 1 — Nama & Jenis */}
+        {/* STEP 1 */}
         {step === 1 && (
           <div className="bg-white border border-gray-100 rounded-2xl p-6 space-y-5">
             <div>
@@ -162,28 +197,24 @@ export default function LogoPage() {
           </div>
         )}
 
-        {/* STEP 2 — Filosofi, Gaya & Warna */}
+        {/* STEP 2 */}
         {step === 2 && (
           <div className="bg-white border border-gray-100 rounded-2xl p-6 space-y-5">
-
-            {/* Badge info */}
             <div className="text-xs bg-emerald-50 text-emerald-700 px-3 py-1 rounded-lg inline-block font-medium">
               {form.namaUsaha} • {form.jenis}
             </div>
 
-            {/* Filosofi */}
             <div>
               <p className="text-xs font-semibold text-gray-400 mb-2">Filosofi Usaha</p>
               <textarea
                 className="w-full border rounded-xl px-4 py-3 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-300"
                 rows={4}
-                placeholder="Ceritakan nilai atau filosofi usahamu. Contoh: 'Kami hadir untuk membawa cita rasa tradisional dengan sentuhan modern, terjangkau untuk semua kalangan.'"
+                placeholder="Contoh: 'Kami hadir untuk membawa cita rasa tradisional dengan sentuhan modern, terjangkau untuk semua kalangan.'"
                 value={form.filosofi}
                 onChange={(e) => set("filosofi", e.target.value)}
               />
             </div>
 
-            {/* Gaya Visual */}
             <div>
               <p className="text-xs font-semibold text-gray-400 mb-3">Gaya Visual Logo</p>
               <div className="grid grid-cols-2 gap-2">
@@ -209,14 +240,13 @@ export default function LogoPage() {
               </div>
             </div>
 
-            {/* Warna Primer (opsional) */}
             <div>
               <p className="text-xs font-semibold text-gray-400 mb-2">
                 Warna yang Diinginkan <span className="font-normal">(opsional)</span>
               </p>
               <input
                 className="w-full border rounded-xl px-4 py-3 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-300"
-                placeholder="Contoh: hijau tua, biru navy, merah bata, #FF6B35"
+                placeholder="Contoh: hijau tua, biru navy, merah bata"
                 value={form.warnaPrimer}
                 onChange={(e) => set("warnaPrimer", e.target.value)}
               />
@@ -253,40 +283,77 @@ export default function LogoPage() {
             {/* Gambar Logo */}
             <div className="bg-white border border-gray-100 rounded-2xl p-6 text-center">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">Logo Generated</p>
+
               {result.image ? (
                 <>
-                  <div className="bg-gray-50 rounded-xl p-6 inline-block mb-4">
+                  {result.note && (
+                    <p className="text-xs text-amber-500 mb-3">ℹ️ {result.note}</p>
+                  )}
+                  <div className="bg-gray-50 rounded-xl p-6 mb-4">
                     <img
                       src={result.image}
                       alt={`Logo ${form.namaUsaha}`}
                       className="w-48 h-48 object-contain mx-auto"
+                      onError={(e) => {
+                        e.target.style.display = "none";
+                        e.target.nextSibling.style.display = "block";
+                      }}
                     />
+                    <p className="text-sm text-gray-400 hidden">
+                      Gambar tidak bisa ditampilkan. Coba generate ulang.
+                    </p>
                   </div>
+
+                  {/* Download button */}
                   <button
                     onClick={() => downloadImage(result.image)}
-                    className="w-full bg-emerald-50 text-emerald-600 py-3 rounded-xl text-sm font-semibold hover:bg-emerald-100 transition-all"
+                    disabled={downloading}
+                    className="w-full bg-emerald-50 text-emerald-600 py-3 rounded-xl text-sm font-semibold hover:bg-emerald-100 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                   >
-                    ⬇️ Download Logo
+                    {downloading ? (
+                      <>
+                        <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                        </svg>
+                        Mengunduh...
+                      </>
+                    ) : (
+                      <>⬇️ Download Logo</>
+                    )}
                   </button>
+
+                  {result.modelUsed && (
+                    <p className="text-xs text-gray-300 mt-2">via {result.modelUsed}</p>
+                  )}
                 </>
               ) : (
-                <div className="bg-gray-50 rounded-xl p-8 text-gray-400 text-sm">
-                  {result.imageError || "Gambar tidak tersedia"}
+                <div className="bg-amber-50 border border-amber-100 rounded-xl p-6">
+                  <p className="text-2xl mb-2">⚠️</p>
+                  <p className="text-sm font-semibold text-amber-700">Gambar gagal dibuat</p>
+                  <p className="text-xs text-amber-500 mt-1 mb-4">
+                    {result.imageError || "Konsep logo berhasil — klik Generate Ulang untuk coba lagi"}
+                  </p>
+                  <button
+                    onClick={generate}
+                    disabled={loading}
+                    className="w-full bg-amber-500 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-amber-600 transition-all disabled:opacity-40"
+                  >
+                    {loading ? "Generating..." : "🔄 Coba Lagi"}
+                  </button>
                 </div>
               )}
             </div>
 
-            {/* Konsep & Detail Brand */}
+            {/* Konsep Brand */}
             <div className="bg-white border border-gray-100 rounded-2xl p-6 space-y-4">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Konsep Brand</p>
-
               <ResultRow label="Konsep" value={result.konsep} />
               <div className="border-t" />
               <ResultRow label="Elemen Visual" value={result.elemenVisual} />
               <div className="border-t" />
               <ResultRow label="Filosofi Desain" value={result.filosofiDesain} />
               <div className="border-t" />
-
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">Palet Warna</p>
@@ -297,8 +364,6 @@ export default function LogoPage() {
                   <p className="text-sm text-gray-700">{result.tipografi}</p>
                 </div>
               </div>
-
-              {/* Gaya badge */}
               {result.gaya && (
                 <>
                   <div className="border-t" />
@@ -323,7 +388,7 @@ export default function LogoPage() {
           </div>
         )}
 
-        {/* LIMIT MODAL */}
+        {/* LIMIT MODAL — redirect ke /plan */}
         {showLimitModal && (
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-2xl w-[90%] max-w-sm text-center shadow-xl">
