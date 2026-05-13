@@ -35,40 +35,29 @@ function truncatePrompt(prompt, maxChars = 900) {
 
 // Coba dall-e-3, fallback ke dall-e-2 jika tidak tersedia
 async function generateImage(prompt) {
-  // — Percobaan 1: dall-e-3
+  // Coba gpt-image-1 (model image generation yang tersedia)
   try {
     const result = await openai.images.generate({
-      model: "dall-e-3",
+      model: "gpt-image-1",
       prompt: truncatePrompt(prompt),
       size: "1024x1024",
       quality: "standard",
-      style: "natural",
       n: 1,
     });
-    return { url: result.data?.[0]?.url ?? null, model: "dall-e-3" };
-  } catch (err3) {
-    const msg = err3?.message ?? "";
-    console.error("DALL-E 3 failed:", msg);
+    return { url: result.data?.[0]?.url ?? null, model: "gpt-image-1" };
+  } catch (err1) {
+    console.error("gpt-image-1 failed:", err1?.message);
 
-    // Hanya fallback jika memang model tidak tersedia / tier tidak cukup
-    const isModelUnavailable =
-      msg.includes("does not exist") ||
-      msg.includes("model_not_found") ||
-      msg.includes("unsupported") ||
-      err3?.status === 404;
-
-    if (!isModelUnavailable) throw err3; // Error lain (content policy, dll) — lempar
+    // Fallback ke gpt-image-2
+    const result2 = await openai.images.generate({
+      model: "gpt-image-2",
+      prompt: truncatePrompt(prompt),
+      size: "1024x1024",
+      quality: "standard",
+      n: 1,
+    });
+    return { url: result2.data?.[0]?.url ?? null, model: "gpt-image-2" };
   }
-
-  // — Percobaan 2: dall-e-2 (tersedia di semua tier)
-  console.log("Falling back to dall-e-2...");
-  const result2 = await openai.images.generate({
-    model: "dall-e-2",
-    prompt: truncatePrompt(prompt, 900), // dall-e-2 max 1000 chars
-    size: "1024x1024",
-    n: 1,
-  });
-  return { url: result2.data?.[0]?.url ?? null, model: "dall-e-2" };
 }
 
 export const POST = withUsageCheck("logo", async (req, session) => {
