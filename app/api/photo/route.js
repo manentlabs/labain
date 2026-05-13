@@ -1,11 +1,13 @@
 import { withUsageCheck } from "@/app/lib/withUsageCheck";
 import OpenAI from "openai";
+import { writeFile, mkdir } from "fs/promises";
+import { randomUUID } from "crypto";
+import path from "path";
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Panduan gaya foto per konteks
 const styleGuide = {
   "product-clean": {
     label: "Clean Product Shot",
@@ -44,12 +46,47 @@ const styleGuide = {
   },
 };
 
+function truncatePrompt(prompt, maxChars = 900) {
+  if (prompt.length <= maxChars) return prompt;
+  return prompt.slice(0, maxChars).trimEnd();
+}
+
+async function generateImage(prompt) {
+  const result = await openai.images.generate({
+    model: "gpt-image-1",
+    prompt: truncatePrompt(prompt),
+    size: "1024x1024",
+    quality: "medium",
+    n: 1,
+  });
+
+  const item = result.data?.[0];
+  if (!item) throw new Error("Tidak ada data gambar");
+
+  const b64 = item.b64_json ?? item.url ?? null;
+  if (!b64) throw new Error("Format respons tidak dikenali");
+
+  if (item.b64_json) {
+    const filename = `foto-produk-${randomUUID()}.png`;
+    const filepath = path.join(process.cwd(), "public", "tmp", filename);
+
+    await writeFile(filepath, Buffer.from(item.b64_json, "base64"));
+
+    return {
+      url: `/tmp/${filename}`,
+      model: "gpt-image-1",
+    };
+  }
+
+  return { url: item.url, model: "gpt-image-1" };
+}
+
 export const POST = withUsageCheck("photo", async (req, session) => {
   const formData = await req.formData();
   const file = formData.get("image");
   const styleKey = formData.get("style") || "product-clean";
-  const targetPlatform = formData.get("platform") || "general"; // shopee, instagram, tokopedia, general
-  const additionalContext = formData.get("context") || ""; // misal: "produk untuk ibu hamil", "target pasar anak muda"
+  const targetPlatform = formData.get("platform") || "general";
+  const additionalContext = formData.get("context") || "";
 
   if (!file)
     return Response.json({ error: "Gambar wajib diupload" }, { status: 400 });
@@ -58,9 +95,7 @@ export const POST = withUsageCheck("photo", async (req, session) => {
 
   const selectedStyle = styleGuide[styleKey] ?? styleGuide["product-clean"];
 
-  // Deteksi MIME type dari file untuk menghindari asumsi jpeg
   const mimeType = file.type?.startsWith("image/") ? file.type : "image/jpeg";
-
   const arrayBuffer = await file.arrayBuffer();
   const base64Image = Buffer.from(arrayBuffer).toString("base64");
 
@@ -75,7 +110,7 @@ export const POST = withUsageCheck("photo", async (req, session) => {
           content:
             "You are a professional product photographer and creative director. " +
             "Your job is to analyze product images with extreme visual precision, " +
-            "then write DALL-E 3 prompts that faithfully recreate the product in a new setting. " +
+            "then write image generation prompts that faithfully recreate the product in a new setting. " +
             "Your prompts must be specific enough that the AI renders the correct product — not a generic substitute.",
         },
         {
@@ -92,27 +127,26 @@ export const POST = withUsageCheck("photo", async (req, session) => {
   "labels": "Any visible text, logos, or branding on the product — describe placement and style",
   "material": "Apparent material: glass, plastic, matte paper, shiny foil, etc.",
   "keyDetails": "Any unique visual identifiers that make this product distinct from similar products",
-  "dallEPrompt": "Write a precise DALL-E 3 prompt in English to photograph this exact product in the following setting:\\n\\nStyle: ${selectedStyle.label}\\nBackground: ${selectedStyle.background}\\nLighting: ${selectedStyle.lighting}\\nMood: ${selectedStyle.mood}\\nPlatform: ${targetPlatform}\\n${additionalContext ? `Additional context: ${additionalContext}` : ""}\\n\\nStart the prompt with 'Professional product photography of' and include all specific visual details of the product before describing the setting. The product must look identical to the original."
+  "imagePrompt": "Write a precise image generation prompt in English to photograph this exact product in the following setting:\\n\\nStyle: ${selectedStyle.label}\\nBackground: ${selectedStyle.background}\\nLighting: ${selectedStyle.lighting}\\nMood: ${selectedStyle.mood}\\nPlatform: ${targetPlatform}\\n${additionalContext ? `Additional context: ${additionalContext}` : ""}\\n\\nStart the prompt with 'Professional product photography of' and include all specific visual details of the product before describing the setting. The product must look identical to the original."
 }`,
             },
             {
               type: "image_url",
               image_url: {
                 url: `data:${mimeType};base64,${base64Image}`,
-                detail: "high", // Minta analisis resolusi tinggi
+                detail: "high",
               },
             },
           ],
         },
       ],
       max_tokens: 1200,
-      temperature: 0.4, // Rendah untuk analisis yang konsisten dan akurat
+      temperature: 0.4,
     });
 
     const raw = visionResponse.choices?.[0]?.message?.content?.trim();
     if (!raw) throw new Error("Respons vision kosong");
 
-    // Bersihkan jika model tetap membungkus dengan markdown
     const cleaned = raw.replace(/```json|```/g, "").trim();
     productAnalysis = JSON.parse(cleaned);
   } catch (err) {
@@ -123,7 +157,7 @@ export const POST = withUsageCheck("photo", async (req, session) => {
     );
   }
 
-  if (!productAnalysis?.dallEPrompt) {
+  if (!productAnalysis?.imagePrompt) {
     return Response.json(
       { error: "Analisis produk tidak lengkap, coba upload gambar yang lebih jelas." },
       { status: 422 }
@@ -131,31 +165,50 @@ export const POST = withUsageCheck("photo", async (req, session) => {
   }
 
   // ── STEP 2: GENERATE FOTO PRODUK BARU ───────────────────────────────
-  // Tambahkan suffix teknis wajib untuk kualitas foto produk
   const technicalSuffix =
     `${selectedStyle.suffix}, ` +
-    "8K ultra sharp, product in perfect focus, photorealistic, " +
+    "ultra sharp, product in perfect focus, photorealistic, " +
     "no text overlays, no watermarks, no people unless specified, " +
     "shot on professional camera, commercial advertising quality";
 
-  const finalPrompt = `${productAnalysis.dallEPrompt}, ${technicalSuffix}`;
+  const primaryPrompt = `${productAnalysis.imagePrompt}, ${technicalSuffix}`;
+
+  // Fallback prompt jika primary gagal (misal: content policy)
+  const fallbackPrompt =
+    `Professional product photography of a ${productAnalysis.productName ?? "product"}, ` +
+    `${selectedStyle.suffix}, isolated clean background, no text, photorealistic, commercial quality`;
+
+  // Pastikan folder public/tmp ada
+  try {
+    await mkdir(path.join(process.cwd(), "public", "tmp"), { recursive: true });
+  } catch (_) {}
 
   let imageUrl = null;
   let imageError = null;
+  let usedFallback = false;
+  let modelUsed = null;
 
   try {
-    const result = await openai.images.generate({
-      model: "dall-e-3",
-      prompt: finalPrompt,
-      size: "1024x1024",
-      quality: "hd",
-      style: "natural", // "natural" lebih realistis untuk foto produk vs "vivid" yang terlalu dramatis
-      n: 1,
-    });
-    imageUrl = result.data?.[0]?.url ?? null;
-  } catch (imgErr) {
-    console.error("DALL-E error:", imgErr);
-    imageError = "Gagal generate gambar. Analisis produk berhasil — coba lagi untuk membuat foto.";
+    ({ url: imageUrl, model: modelUsed } = await generateImage(primaryPrompt));
+  } catch (primaryErr) {
+    console.error("Primary prompt failed:", primaryErr?.message);
+
+    const isContentPolicy =
+      primaryErr?.message?.includes("content_policy") ||
+      primaryErr?.message?.includes("safety") ||
+      primaryErr?.message?.includes("rejected");
+
+    if (isContentPolicy) {
+      try {
+        ({ url: imageUrl, model: modelUsed } = await generateImage(fallbackPrompt));
+        usedFallback = true;
+      } catch (fallbackErr) {
+        console.error("Fallback also failed:", fallbackErr?.message);
+        imageError = "Gambar gagal dibuat. Klik Generate Ulang untuk coba lagi.";
+      }
+    } else {
+      imageError = `Gambar gagal: ${primaryErr?.message ?? "Error tidak diketahui"}`;
+    }
   }
 
   return Response.json({
@@ -169,9 +222,11 @@ export const POST = withUsageCheck("photo", async (req, session) => {
         material: productAnalysis.material,
         keyDetails: productAnalysis.keyDetails,
       },
-      prompt: finalPrompt,
+      prompt: usedFallback ? fallbackPrompt : primaryPrompt,
       image: imageUrl,
+      modelUsed,
       ...(imageError && { imageError }),
+      ...(usedFallback && { note: "Foto dibuat dengan prompt sederhana." }),
     },
   });
 });
