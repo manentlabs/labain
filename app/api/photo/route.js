@@ -4,10 +4,6 @@ import { writeFile, mkdir } from "fs/promises";
 import { randomUUID } from "crypto";
 import path from "path";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 const styleGuide = {
   "product-clean": {
     label: "Clean Product Shot",
@@ -51,7 +47,8 @@ function truncatePrompt(prompt, maxChars = 900) {
   return prompt.slice(0, maxChars).trimEnd();
 }
 
-async function generateImage(prompt) {
+// Klien OpenAI dikirim sebagai argumen (dibuat di dalam handler, bukan di level file).
+async function generateImage(openai, prompt) {
   const result = await openai.images.generate({
     model: "gpt-image-1",
     prompt: truncatePrompt(prompt),
@@ -92,6 +89,9 @@ export const POST = withUsageCheck("photo", async (req, session) => {
     return Response.json({ error: "Gambar wajib diupload" }, { status: 400 });
   if (!process.env.OPENAI_API_KEY)
     return Response.json({ error: "API Key tidak ditemukan" }, { status: 500 });
+
+  // Dibuat di sini (bukan di level file) supaya build tidak butuh key.
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const selectedStyle = styleGuide[styleKey] ?? styleGuide["product-clean"];
 
@@ -189,7 +189,7 @@ export const POST = withUsageCheck("photo", async (req, session) => {
   let modelUsed = null;
 
   try {
-    ({ url: imageUrl, model: modelUsed } = await generateImage(primaryPrompt));
+    ({ url: imageUrl, model: modelUsed } = await generateImage(openai, primaryPrompt));
   } catch (primaryErr) {
     console.error("Primary prompt failed:", primaryErr?.message);
 
@@ -200,7 +200,7 @@ export const POST = withUsageCheck("photo", async (req, session) => {
 
     if (isContentPolicy) {
       try {
-        ({ url: imageUrl, model: modelUsed } = await generateImage(fallbackPrompt));
+        ({ url: imageUrl, model: modelUsed } = await generateImage(openai, fallbackPrompt));
         usedFallback = true;
       } catch (fallbackErr) {
         console.error("Fallback also failed:", fallbackErr?.message);

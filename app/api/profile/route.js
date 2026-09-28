@@ -1,10 +1,6 @@
 import { withUsageCheck } from "@/app/lib/withUsageCheck";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 export const POST = withUsageCheck("profile", async (req, session) => {
   const { namaUsaha, jenis, deskripsi, lokasi, tahunBerdiri, keunggulanUtama } =
     await req.json();
@@ -17,6 +13,9 @@ export const POST = withUsageCheck("profile", async (req, session) => {
     return Response.json({ error: "Deskripsi usaha wajib diisi" }, { status: 400 });
   if (!process.env.OPENAI_API_KEY)
     return Response.json({ error: "OPENAI_API_KEY tidak ditemukan" }, { status: 500 });
+
+  // Dibuat di sini (bukan di level file) supaya build tidak butuh key.
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const extraContext = [
     lokasi ? `Lokasi: ${lokasi}` : null,

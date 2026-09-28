@@ -1,10 +1,6 @@
 import { withUsageCheck } from "@/app/lib/withUsageCheck";
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 export const POST = withUsageCheck("caption", async (req, session) => {
   const { product, tone, platform, targetAudience, keyBenefit } = await req.json();
 
@@ -14,6 +10,9 @@ export const POST = withUsageCheck("caption", async (req, session) => {
   if (!process.env.OPENAI_API_KEY) {
     return Response.json({ error: "OPENAI_API_KEY tidak ditemukan" }, { status: 500 });
   }
+
+  // Dibuat di sini (bukan di level file) supaya build tidak butuh key.
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   const platformGuide = {
     instagram: {

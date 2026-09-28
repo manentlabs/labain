@@ -2,42 +2,16 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { signIn, useSession } from "next-auth/react";
-import { PLANS } from "@/app/lib/plan";
 
 /* ---------------------------------------------------------
    KONFIGURASI
    - MAX_DEMO_TURNS : jumlah pesan di mode coba (samakan dengan server).
-   - PLAN_ROUTE : halaman Plan & Penggunaan.
-   - UNLIMITED  : nilai batas yang dianggap "tanpa batas" di PLANS.
 ---------------------------------------------------------- */
 const MAX_DEMO_TURNS = 6;
-const PLAN_ROUTE = "/plan";
-const UNLIMITED = 999;
 
 type Msg = { role: "user" | "assistant"; content: string };
 
 type Stat = { label: string; value: string; icon: string };
-
-type Plan = {
-  label: string;
-  price: number;
-  color: string;
-  limits: Record<string, number>;
-  capacity: { historyDays: number; products: number };
-};
-
-const plans: Record<string, Plan> = PLANS;
-
-const FEATURE_LABEL: Record<string, string> = {
-  caption: "Caption",
-  logo: "Logo",
-  photo: "Foto produk",
-  profile: "Profil bisnis",
-  finance: "Catat keuangan",
-  hpp: "Hitung HPP",
-};
 
 /* Tiap pilar punya alat (chip) dengan contoh permintaannya sendiri. */
 const pillars = [
@@ -102,8 +76,6 @@ const focusRing =
   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700";
 
 export default function HomeClient({ stats }: { stats: Stat[] }) {
-  const router = useRouter();
-  const { status } = useSession();
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [loading, setLoading] = useState(false);
@@ -153,13 +125,6 @@ export default function HomeClient({ stats }: { stats: Stat[] }) {
     inputRef.current?.focus({ preventScroll: true });
   }
 
-  function handlePlan(key: string) {
-    if (key === "FREE") return fillPrompt(prompt);
-    if (status === "loading") return;
-    if (status === "authenticated") return router.push(PLAN_ROUTE);
-    signIn(undefined, { callbackUrl: PLAN_ROUTE });
-  }
-
   return (
     <main className="min-h-screen bg-gray-50" style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
       {/* ================= HERO ================= */}
@@ -167,131 +132,144 @@ export default function HomeClient({ stats }: { stats: Stat[] }) {
         <div className="absolute -top-32 -right-32 w-[420px] h-[420px] rounded-full bg-emerald-400/10 blur-3xl" />
         <div className="absolute -bottom-40 -left-32 w-[380px] h-[380px] rounded-full bg-indigo-400/10 blur-3xl" />
 
-        <div className="relative max-w-5xl mx-auto px-6 md:px-8 pt-12 pb-16 md:pt-16 md:pb-20">
-          <div className="max-w-3xl mx-auto text-center">
-            <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-800 text-xs font-semibold px-3.5 py-2 rounded-full border border-emerald-100 mb-6">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping motion-reduce:animate-none absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600" />
-              </span>
-              Asisten AI untuk UMKM Indonesia
+        <div className="relative max-w-5xl mx-auto px-6 md:px-8 py-12 md:py-16 lg:py-20">
+          <div className="grid lg:grid-cols-2 gap-10 lg:gap-12 items-center">
+
+            {/* ---------- KIRI: kalimat pembuka ---------- */}
+            <div className="text-left">
+              <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-800 text-xs font-semibold px-3.5 py-2 rounded-full border border-emerald-100 mb-6">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping motion-reduce:animate-none absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600" />
+                </span>
+                Platform AI untuk UMKM Indonesia
+              </div>
+
+              <h1
+                className="text-4xl lg:text-[44px] font-bold text-gray-900 leading-[1.1] mb-4"
+                style={{ letterSpacing: "-0.035em" }}
+              >
+                Lab<span className="text-emerald-700">AI</span>n: Biar AI yang kerja,
+                <br />
+                <span className="text-emerald-700">Anda fokus naik kelas.</span>
+              </h1>
+
+              <p className="text-lg font-medium text-gray-700 mb-2">
+                Satu Klik untuk Digitalisasi Bisnis Anda.
+              </p>
+
+              <p className="text-base text-gray-600 leading-relaxed max-w-md">
+                Dari caption sosmed, foto produk, hingga hitung harga jual dan catat
+                keuangan, semua tersedia dalam satu platform yang dirancang khusus
+                untuk UMKM.
+              </p>
+
+              <div className="mt-7 flex flex-wrap items-center gap-x-4 gap-y-2">
+                <button
+                  type="button"
+                  onClick={() => (prompt.trim() ? runDemo() : fillPrompt(""))}
+                  className={`inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm px-5 py-3 rounded-xl transition-colors shadow-sm ${focusRing}`}
+                >
+                  Coba Labain gratis
+                </button>
+                <span className="text-xs text-gray-500">Tidak perlu login</span>
+              </div>
             </div>
 
-            <h1 className="text-4xl md:text-5xl lg:text-[56px] font-bold text-gray-900 leading-[1.08] mb-5" style={{ letterSpacing: "-0.035em" }}>
-              Punya usaha, punya asisten.
-              <br />
-              <span className="text-emerald-700">Biar Labain yang bantu.</span>
-            </h1>
+            {/* ---------- KANAN: chat demo ---------- */}
+            <div className="w-full">
+              <div className="bg-white border border-gray-200 rounded-3xl shadow-lg shadow-gray-200/50 p-3">
+                <div className="bg-gray-50 rounded-2xl p-4 md:p-5">
+                  {messages.length > 0 && (
+                    <div aria-live="polite" className="mb-4 space-y-3 max-h-80 overflow-y-auto pr-1">
+                      {messages.map((m, i) => (
+                        <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+                          <p
+                            className={`whitespace-pre-wrap text-sm leading-relaxed px-3.5 py-2.5 rounded-2xl max-w-[88%] ${
+                              m.role === "user"
+                                ? "bg-emerald-600 text-white rounded-br-md"
+                                : "bg-white border border-gray-200 text-gray-800 rounded-bl-md"
+                            }`}
+                          >
+                            {m.content}
+                          </p>
+                        </div>
+                      ))}
+                      {loading && <p className="text-xs text-gray-500">Labain sedang mengetik…</p>}
+                    </div>
+                  )}
 
-            <p className="text-base md:text-lg text-gray-600 leading-relaxed max-w-2xl mx-auto">
-              Ceritakan kebutuhan usahamu dalam bahasa sehari-hari. Labain membantu promosi, menghitung harga jual, dan mencatat keuangan.
-            </p>
-          </div>
+                  <label htmlFor="labain-prompt" className="block text-sm font-medium text-gray-700">
+                    Apa yang ingin kamu lakukan dengan usahamu?
+                  </label>
 
-          {/* Kotak percakapan (teaser asisten) */}
-          <div className="max-w-2xl mx-auto mt-9">
-            <div className="bg-white border border-gray-200 rounded-3xl shadow-lg shadow-gray-200/50 p-3">
-              <div className="bg-gray-50 rounded-2xl p-4 md:p-5">
-                {messages.length > 0 && (
-                  <div aria-live="polite" className="mb-4 space-y-3 max-h-80 overflow-y-auto pr-1">
-                    {messages.map((m, i) => (
-                      <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
-                        <p
-                          className={`whitespace-pre-wrap text-sm leading-relaxed px-3.5 py-2.5 rounded-2xl max-w-[88%] ${
-                            m.role === "user"
-                              ? "bg-emerald-600 text-white rounded-br-md"
-                              : "bg-white border border-gray-200 text-gray-800 rounded-bl-md"
-                          }`}
-                        >
-                          {m.content}
-                        </p>
-                      </div>
-                    ))}
-                    {loading && <p className="text-xs text-gray-500">Labain sedang mengetik…</p>}
-                  </div>
-                )}
-
-                <label htmlFor="labain-prompt" className="block text-sm font-medium text-gray-700">
-                  Apa yang ingin kamu lakukan dengan usahamu?
-                </label>
-
-                <div className="mt-3 bg-white border border-gray-200 focus-within:border-emerald-400 rounded-2xl p-2 flex items-end gap-2 transition-colors">
-                  <textarea
-                    id="labain-prompt"
-                    ref={inputRef}
-                    value={prompt}
-                    onChange={(e) => setPrompt(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                        e.preventDefault();
-                        runDemo();
-                      }
-                    }}
-                    rows={2}
-                    maxLength={600}
-                    disabled={limitReached}
-                    placeholder="Contoh: Saya jualan keripik pisang, bantu buatkan caption promosi..."
-                    className="flex-1 resize-none bg-transparent outline-none text-sm text-gray-800 placeholder:text-gray-500 px-2 py-2"
-                  />
-                  <button
-                    type="button"
-                    onClick={runDemo}
-                    disabled={loading || !prompt.trim() || limitReached}
-                    aria-label="Kirim ke Labain"
-                    className={`shrink-0 w-10 h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${focusRing}`}
-                  >
-                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <line x1="22" y1="2" x2="11" y2="13" />
-                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                    </svg>
-                  </button>
-                </div>
-
-                {error && (
-                  <p role="alert" className="text-xs text-red-600 mt-2">{error}</p>
-                )}
-
-                {(messages.length > 0 || limitReached) && (
-                  <div className="mt-3 rounded-xl bg-emerald-50 border border-emerald-100 px-3.5 py-3 text-xs text-emerald-900 flex flex-wrap items-center justify-between gap-2">
-                    <span>
-                      {limitReached
-                        ? "Batas mode coba tercapai. Masuk untuk melanjutkan."
-                        : "Suka hasilnya? Masuk untuk menyimpan riwayat dan data usahamu."}
-                    </span>
-                    <span className="flex items-center gap-3 font-semibold">
-                      <Link href="/register" className="underline">Daftar gratis</Link>
-                      <button type="button" onClick={resetDemo} className="underline">Mulai baru</button>
-                    </span>
-                  </div>
-                )}
-
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {suggestions.map((item) => (
+                  <div className="mt-3 bg-white border border-gray-200 focus-within:border-emerald-400 rounded-2xl p-2 flex items-end gap-2 transition-colors">
+                    <textarea
+                      id="labain-prompt"
+                      ref={inputRef}
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          runDemo();
+                        }
+                      }}
+                      rows={2}
+                      maxLength={600}
+                      disabled={limitReached}
+                      placeholder="Contoh: Saya jualan keripik pisang, bantu buatkan caption promosi..."
+                      className="flex-1 resize-none bg-transparent outline-none text-sm text-gray-800 placeholder:text-gray-500 px-2 py-2"
+                    />
                     <button
                       type="button"
-                      key={item}
-                      onClick={() => setPrompt(item)}
-                      className={`text-xs bg-white border border-gray-200 hover:border-emerald-300 hover:text-emerald-700 text-gray-600 px-3 py-1.5 rounded-full transition-colors ${focusRing}`}
+                      onClick={runDemo}
+                      disabled={loading || !prompt.trim() || limitReached}
+                      aria-label="Kirim ke Labain"
+                      className={`shrink-0 w-10 h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${focusRing}`}
                     >
-                      {item}
+                      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <line x1="22" y1="2" x2="11" y2="13" />
+                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                      </svg>
                     </button>
-                  ))}
-                </div>
-              </div>
-              <p className="text-[11px] text-gray-500 text-center py-2">
-                Coba dulu, tidak perlu login. Mode coba tidak menyimpan percakapan.
-              </p>
-            </div>
-          </div>
+                  </div>
 
-          <div className="flex justify-center mt-6">
-            <button
-              type="button"
-              onClick={() => (prompt.trim() ? runDemo() : fillPrompt(""))}
-              className={`inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm px-5 py-3 rounded-xl transition-colors shadow-sm ${focusRing}`}
-            >
-              Coba Labain gratis
-            </button>
+                  {error && <p role="alert" className="text-xs text-red-600 mt-2">{error}</p>}
+
+                  {(messages.length > 0 || limitReached) && (
+                    <div className="mt-3 rounded-xl bg-emerald-50 border border-emerald-100 px-3.5 py-3 text-xs text-emerald-900 flex flex-wrap items-center justify-between gap-2">
+                      <span>
+                        {limitReached
+                          ? "Batas mode coba tercapai. Masuk untuk melanjutkan."
+                          : "Suka hasilnya? Masuk untuk menyimpan riwayat dan data usahamu."}
+                      </span>
+                      <span className="flex items-center gap-3 font-semibold">
+                        <Link href="/register" className="underline">Daftar gratis</Link>
+                        <button type="button" onClick={resetDemo} className="underline">Mulai baru</button>
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {suggestions.map((item) => (
+                      <button
+                        type="button"
+                        key={item}
+                        onClick={() => setPrompt(item)}
+                        className={`text-xs bg-white border border-gray-200 hover:border-emerald-300 hover:text-emerald-700 text-gray-600 px-3 py-1.5 rounded-full transition-colors ${focusRing}`}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500 text-center py-2">
+                  Coba dulu, tidak perlu login. Mode coba tidak menyimpan percakapan.
+                </p>
+              </div>
+            </div>
+
           </div>
         </div>
       </section>
@@ -402,77 +380,8 @@ export default function HomeClient({ stats }: { stats: Stat[] }) {
         </div>
       </section>
 
-      {/* ================= HARGA (dari PLANS) ================= */}
-      <section id="harga" className="max-w-5xl mx-auto px-6 md:px-8 py-12 md:py-14">
-        <div className="text-center max-w-xl mx-auto mb-9">
-          <h2 className="text-2xl md:text-3xl font-bold text-gray-900" style={{ letterSpacing: "-0.025em" }}>
-            Mulai gratis, upgrade saat usahamu berkembang
-          </h2>
-          <p className="text-sm text-gray-600 mt-3">Batas pemakaian dihitung per hari dan bisa berubah kapan saja lewat halaman Plan.</p>
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-4">
-          {Object.entries(plans).map(([key, plan]) => {
-            const featured = key === "PRO";
-            return (
-              <div
-                key={key}
-                className="bg-white rounded-2xl p-5 flex flex-col relative"
-                style={{ border: featured ? `1.5px solid ${plan.color}` : "1px solid #f3f4f6" }}
-              >
-                {featured && (
-                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-white px-3 py-0.5 rounded-full" style={{ background: plan.color }}>
-                    Terpopuler
-                  </span>
-                )}
-                <h3 className="text-sm font-bold text-gray-800">{plan.label}</h3>
-                <p className="text-2xl font-bold text-gray-900 mt-1 mb-4" style={{ letterSpacing: "-0.02em" }}>
-                  {plan.price === 0 ? "Gratis" : `Rp${plan.price.toLocaleString("id-ID")}`}
-                  {plan.price > 0 && <span className="text-xs font-normal text-gray-500"> /bulan</span>}
-                </p>
-
-                <ul className="space-y-1.5 text-xs mb-3 list-none p-0">
-                  {Object.entries(plan.limits).map(([feat, lim]) => (
-                    <li key={feat} className="flex justify-between text-gray-600">
-                      <span>{FEATURE_LABEL[feat] ?? feat}</span>
-                      <span className="font-semibold text-gray-800">
-                        {lim === 0 ? "Tidak tersedia" : lim >= UNLIMITED ? "Tanpa batas" : `${lim}×/hari`}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-
-                <ul className="space-y-1.5 text-xs border-t border-gray-100 pt-3 mb-5 list-none p-0">
-                  <li className="flex justify-between text-gray-600">
-                    <span>Riwayat data</span>
-                    <span className="font-semibold text-gray-800">{plan.capacity.historyDays} hari</span>
-                  </li>
-                  <li className="flex justify-between text-gray-600">
-                    <span>Produk tersimpan</span>
-                    <span className="font-semibold text-gray-800">{plan.capacity.products} produk</span>
-                  </li>
-                </ul>
-
-                <button
-                  type="button"
-                  onClick={() => handlePlan(key)}
-                  className={`mt-auto w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 ${focusRing}`}
-                  style={
-                    key === "FREE"
-                      ? { background: "#f3f4f6", color: "#374151" }
-                      : { background: plan.color, color: "#fff" }
-                  }
-                >
-                  {key === "FREE" ? "Coba gratis" : `Pilih ${plan.label}`}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
       {/* ================= FOOTER ================= */}
-      <footer className="max-w-5xl mx-auto px-6 md:px-8 pb-8 text-center">
+      <footer className="max-w-5xl mx-auto px-6 md:px-8 py-8 text-center">
         <p className="text-xs text-gray-500">© 2026 Labain. Dibuat untuk pelaku usaha Indonesia.</p>
       </footer>
     </main>

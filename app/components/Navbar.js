@@ -6,11 +6,11 @@ import { useSession, signOut } from "next-auth/react";
 
 /* ---------------------------------------------------------
    Ubah ke true saat halaman /assistant sudah siap.
-   Sesuaikan FINANCE_HREF dan HPP_HREF dengan route aslimu.
+   Sesuaikan HISTORY_HREF dan DATA_HREF dengan route aslimu.
 ---------------------------------------------------------- */
 const ASSISTANT_ENABLED = false;
-const FINANCE_HREF = "/keuangan";
-const HPP_HREF = "/hpp";
+const HISTORY_HREF = "/riwayat";
+const DATA_HREF = "/data-usaha";
 
 // ── Icons ──────────────────────────────────────────────────
 const svgProps = { width: 18, height: 18, viewBox: "0 0 20 20", fill: "none", "aria-hidden": true };
@@ -34,50 +34,24 @@ const Icon = {
       <path d="M15.5 13l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7.7-1.8z" {...stroke(active)} />
     </svg>
   ),
-  Finance: ({ active }) => (
+  History: ({ active }) => (
     <svg {...svgProps}>
-      <path d="M3 6a2 2 0 012-2h9a1 1 0 011 1v2" {...stroke(active)} />
-      <path d="M3 6v9a2 2 0 002 2h11a1 1 0 001-1V8a1 1 0 00-1-1H5a2 2 0 01-2-1z" {...stroke(active)} />
-      <circle cx="13.5" cy="12" r="1" {...stroke(active)} />
+      <circle cx="10" cy="10" r="7" {...stroke(active)} />
+      <path d="M10 6v4l2.5 1.5" {...stroke(active)} />
     </svg>
   ),
-  Hpp: ({ active }) => (
+  Data: ({ active }) => (
     <svg {...svgProps}>
-      <path d="M3 10.5V4a1 1 0 011-1h6.5l6.5 6.5-7 7L3 10.5z" {...stroke(active)} />
-      <circle cx="7" cy="7" r="1" {...stroke(active)} />
+      <path d="M3 17h14" {...stroke(active)} />
+      <rect x="4" y="10" width="3" height="5" rx="0.8" {...stroke(active)} />
+      <rect x="8.5" y="6" width="3" height="9" rx="0.8" {...stroke(active)} />
+      <rect x="13" y="3" width="3" height="12" rx="0.8" {...stroke(active)} />
     </svg>
   ),
-  Caption: ({ active }) => (
-    <svg {...svgProps}>
-      <path d="M4 4h12a1 1 0 011 1v7a1 1 0 01-1 1H7l-4 3V5a1 1 0 011-1z" {...stroke(active)} />
-    </svg>
-  ),
-  Profile: ({ active }) => (
+  Account: ({ active }) => (
     <svg {...svgProps}>
       <circle cx="10" cy="7" r="3" {...stroke(active)} />
       <path d="M4 17c0-3.314 2.686-5 6-5s6 1.686 6 5" {...stroke(active)} />
-    </svg>
-  ),
-  Logo: ({ active }) => (
-    <svg {...svgProps}>
-      <circle cx="10" cy="10" r="7" {...stroke(active)} />
-      <circle cx="10" cy="10" r="2.5" {...stroke(active)} />
-      <path d="M10 3v2M10 15v2M3 10h2M15 10h2" {...stroke(active)} />
-    </svg>
-  ),
-  Foto: ({ active }) => (
-    <svg {...svgProps}>
-      <rect x="2" y="5" width="16" height="12" rx="2" {...stroke(active)} />
-      <circle cx="10" cy="11" r="3" {...stroke(active)} />
-      <path d="M7 5l1-2h4l1 2" {...stroke(active)} />
-    </svg>
-  ),
-  More: ({ active }) => (
-    <svg {...svgProps}>
-      <rect x="3" y="3" width="6" height="6" rx="1.5" {...stroke(active)} />
-      <rect x="11" y="3" width="6" height="6" rx="1.5" {...stroke(active)} />
-      <rect x="3" y="11" width="6" height="6" rx="1.5" {...stroke(active)} />
-      <rect x="11" y="11" width="6" height="6" rx="1.5" {...stroke(active)} />
     </svg>
   ),
   UserCircle: () => (
@@ -101,31 +75,21 @@ const Icon = {
       <path d="M4 10l4-4 4 4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   ),
+  Close: () => (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  ),
 };
 
 // ── Data navigasi ──────────────────────────────────────────
+// authOnly: hanya tampil untuk pengguna yang sudah login.
 const home = { href: "/", label: "Home", short: "Home", Icon: Icon.Home };
 const assistant = { href: "/assistant", label: "Asisten", short: "Asisten", Icon: Icon.Assistant };
-const finance = { href: FINANCE_HREF, label: "Catat Keuangan", short: "Keuangan", Icon: Icon.Finance };
-const hpp = { href: HPP_HREF, label: "Harga & HPP", short: "HPP", Icon: Icon.Hpp };
-const caption = { href: "/caption", label: "Caption", short: "Caption", Icon: Icon.Caption };
-const foto = { href: "/photo", label: "Foto Produk", short: "Foto", Icon: Icon.Foto };
-const logo = { href: "/logo", label: "Logo Usaha", short: "Logo", Icon: Icon.Logo };
-// Ini profil usaha, bukan profil akun (profil akun ada di /update_profile).
-const profile = { href: "/profile", label: "Profil Usaha", short: "Profil", Icon: Icon.Profile };
+const history = { href: HISTORY_HREF, label: "Riwayat", short: "Riwayat", Icon: Icon.History, authOnly: true };
+const data = { href: DATA_HREF, label: "Data Usaha", short: "Data", Icon: Icon.Data, authOnly: true };
 
-const marketingItems = [caption, foto, logo, profile];
-
-// Desktop: dikelompokkan sesuai pilar di landing page.
-const navGroups = [
-  { label: null, items: [home, ...(ASSISTANT_ENABLED ? [assistant] : [])] },
-  { label: "Keuangan", items: [finance, hpp] },
-  { label: "Pemasaran", items: marketingItems },
-];
-
-// Mobile: 2 item kiri, tombol akun di tengah, HPP, lalu "Lainnya" (alat pemasaran).
-// Saat asisten aktif, ia menggantikan Home karena logo di header sudah ke beranda.
-const mobileLeft = [ASSISTANT_ENABLED ? assistant : home, finance];
+const allItems = [home, ...(ASSISTANT_ENABLED ? [assistant] : []), history, data];
 
 const PLAN_COLOR = { PRO: "#f59e0b", STARTER: "#059669" };
 
@@ -137,13 +101,18 @@ export default function Navbar() {
   const [userPlan, setUserPlan] = useState("FREE");
   const { data: session, status } = useSession();
 
+  // Saat sesi dimuat, tampilan tetap dirender supaya halaman tidak melompat.
+  const loading = status === "loading";
   const user = session?.user;
   const email = user?.email;
   const initials = email ? email.slice(0, 2).toUpperCase() : "??";
 
+  // Item yang butuh login disembunyikan untuk tamu.
+  const items = allItems.filter((i) => !i.authOnly || loading || user);
+
   const isActive = (href) =>
     href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
-  const moreActive = marketingItems.some((i) => isActive(i.href));
+  const accountActive = isActive("/update_profile") || isActive("/plan");
 
   // Tutup menu saat klik di luar
   useEffect(() => {
@@ -168,9 +137,20 @@ export default function Navbar() {
     return () => document.removeEventListener("keydown", handler);
   }, [menuOpen, sheetOpen]);
 
-  // Tutup sheet setelah pindah halaman
+  // Kunci scroll halaman saat sheet terbuka
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [sheetOpen]);
+
+  // Tutup menu dan sheet setelah pindah halaman
   useEffect(() => {
     setSheetOpen(false);
+    setMenuOpen(false);
   }, [pathname]);
 
   // Ambil plan pengguna
@@ -182,7 +162,7 @@ export default function Navbar() {
     let cancelled = false;
     fetch("/api/user/plan")
       .then((res) => res.json())
-      .then((data) => !cancelled && setUserPlan(data.plan || "FREE"))
+      .then((d) => !cancelled && setUserPlan(d.plan || "FREE"))
       .catch(() => {});
     return () => {
       cancelled = true;
@@ -191,7 +171,9 @@ export default function Navbar() {
 
   const logout = () => signOut({ callbackUrl: "/login" });
 
-  if (status === "loading") return null;
+  const planBadge = (
+    <span style={{ color: PLAN_COLOR[userPlan] ?? "#6b7280", fontWeight: 500 }}>{userPlan}</span>
+  );
 
   return (
     <>
@@ -204,14 +186,7 @@ export default function Navbar() {
           </span>
         </Link>
 
-        {user ? (
-          <Link
-            href="/update_profile"
-            className="text-[11px] text-gray-500 truncate max-w-[140px] hover:text-emerald-600 transition-colors"
-          >
-            {email}
-          </Link>
-        ) : (
+        {!loading && !user && (
           <div className="flex items-center gap-3 text-[12px]">
             <Link href="/login" className="font-medium text-gray-600 hover:text-gray-900">
               Masuk
@@ -225,8 +200,8 @@ export default function Navbar() {
 
       <div className="md:hidden h-12" />
 
-      {/* Sheet "Lainnya": alat pemasaran */}
-      {sheetOpen && (
+      {/* Sheet akun (mobile, khusus pengguna login) */}
+      {sheetOpen && user && (
         <div className="md:hidden fixed inset-0 z-[60]">
           <button
             type="button"
@@ -237,31 +212,47 @@ export default function Navbar() {
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Alat pemasaran"
+            aria-label="Menu akun"
             className="absolute bottom-0 inset-x-0 bg-white rounded-t-2xl px-4 pt-4"
             style={{ paddingBottom: "max(env(safe-area-inset-bottom), 1rem)" }}
           >
-            <p className="text-sm font-semibold text-gray-800 mb-3">Pemasaran</p>
-            <div className="grid grid-cols-2 gap-2">
-              {marketingItems.map((item) => {
-                const active = isActive(item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={active ? "page" : undefined}
-                    className="flex items-center gap-3 px-3 py-3 rounded-xl border border-gray-100"
-                    style={active ? { background: "#ecfdf5", borderColor: "#a7f3d0" } : {}}
-                  >
-                    <span style={{ color: active ? "#059669" : "#6b7280" }}>
-                      <item.Icon active={active} />
-                    </span>
-                    <span className="text-[13px] font-medium" style={{ color: active ? "#047857" : "#374151" }}>
-                      {item.label}
-                    </span>
-                  </Link>
-                );
-              })}
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-9 h-9 rounded-full bg-emerald-50 border border-emerald-200 grid place-items-center text-[11px] font-medium text-emerald-700 flex-shrink-0">
+                  {initials}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-gray-800 truncate">{email}</p>
+                  <p className="text-[11px] text-gray-500">Plan: {planBadge}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSheetOpen(false)}
+                aria-label="Tutup"
+                className="w-8 h-8 grid place-items-center rounded-full text-gray-500 hover:bg-gray-100 flex-shrink-0"
+              >
+                <Icon.Close />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <Link href="/update_profile" className="flex items-center gap-3 px-3 py-3 rounded-xl text-[13px] text-gray-700 hover:bg-gray-50">
+                <span className="text-gray-500"><Icon.UserCircle /></span>
+                Akun saya
+              </Link>
+              <Link href="/plan" className="flex items-center gap-3 px-3 py-3 rounded-xl text-[13px] text-gray-700 hover:bg-gray-50">
+                <span className="text-gray-500"><Icon.Star /></span>
+                Plan &amp; penggunaan
+              </Link>
+              <button
+                type="button"
+                onClick={logout}
+                className="flex items-center gap-3 px-3 py-3 rounded-xl text-[13px] text-red-600 hover:bg-red-50 text-left"
+              >
+                <Icon.Logout />
+                Keluar
+              </button>
             </div>
           </div>
         </div>
@@ -272,33 +263,29 @@ export default function Navbar() {
         className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-white border-t border-gray-100 flex justify-around items-center px-2 pt-2"
         style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
       >
-        {mobileLeft.map((item) => (
+        {items.map((item) => (
           <MobileItem key={item.href} item={item} active={isActive(item.href)} />
         ))}
 
-        <Link
-          href={user ? "/plan" : "/login"}
-          aria-label={user ? "Plan dan akun" : "Masuk"}
-          className="w-10 h-10 rounded-full bg-emerald-600 text-white grid place-items-center shadow-md shadow-emerald-200"
-        >
-          <Icon.Profile />
-        </Link>
-
-        <MobileItem item={hpp} active={isActive(hpp.href)} />
-
-        <button
-          type="button"
-          onClick={() => setSheetOpen((v) => !v)}
-          aria-expanded={sheetOpen}
-          aria-haspopup="dialog"
-          className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors"
-          style={moreActive ? { background: "#ecfdf5" } : {}}
-        >
-          <Icon.More active={moreActive} />
-          <span className="text-[10px] font-medium" style={{ color: moreActive ? "#059669" : "#6b7280" }}>
-            Lainnya
-          </span>
-        </button>
+        {loading ? (
+          <span aria-hidden="true" className="w-10 h-10 rounded-lg bg-gray-100" />
+        ) : user ? (
+          <button
+            type="button"
+            onClick={() => setSheetOpen((v) => !v)}
+            aria-expanded={sheetOpen}
+            aria-haspopup="dialog"
+            className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors"
+            style={accountActive ? { background: "#ecfdf5" } : {}}
+          >
+            <Icon.Account active={accountActive} />
+            <span className="text-[10px] font-medium" style={{ color: accountActive ? "#059669" : "#6b7280" }}>
+              Akun
+            </span>
+          </button>
+        ) : (
+          <MobileItem item={{ href: "/login", short: "Masuk", Icon: Icon.Account }} active={false} />
+        )}
       </nav>
 
       {/* ═════════════ DESKTOP (≥ md) ═════════════ */}
@@ -331,28 +318,19 @@ export default function Navbar() {
         </Link>
 
         {/* Nav */}
-        <nav aria-label="Navigasi utama" className="flex-1 p-2 flex flex-col overflow-y-auto overflow-x-hidden">
-          {navGroups.map((group, gi) => (
-            <div key={gi} className="flex flex-col gap-0.5">
-              {group.label && (
-                <div className="h-7 px-2 flex items-end pb-1">
-                  {expanded ? (
-                    <p className="text-[11px] font-medium text-gray-500 whitespace-nowrap">{group.label}</p>
-                  ) : (
-                    <hr className="w-full border-gray-100" />
-                  )}
-                </div>
-              )}
-              {group.items.map((item) => (
-                <DesktopItem key={item.href} item={item} active={isActive(item.href)} expanded={expanded} />
-              ))}
-            </div>
+        <nav aria-label="Navigasi utama" className="flex-1 p-2 flex flex-col gap-0.5 overflow-y-auto overflow-x-hidden">
+          {items.map((item) => (
+            <DesktopItem key={item.href} item={item} active={isActive(item.href)} expanded={expanded} />
           ))}
         </nav>
 
         {/* User section */}
         <div className="p-2 border-t border-gray-100 flex-shrink-0" data-user-menu>
-          {user ? (
+          {loading ? (
+            <div className="px-2 py-1.5">
+              <span aria-hidden="true" className="block w-8 h-8 rounded-full bg-gray-100" />
+            </div>
+          ) : user ? (
             <div className="relative">
               {menuOpen && (
                 <div className="absolute bottom-[calc(100%+6px)] left-0 right-0 bg-white border border-gray-100 rounded-xl shadow-sm p-1 z-50">
@@ -362,10 +340,7 @@ export default function Navbar() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-[11px] font-medium text-gray-800 truncate max-w-[130px]">{email}</p>
-                      <p className="text-[10px] text-gray-500">
-                        Plan:{" "}
-                        <span style={{ color: PLAN_COLOR[userPlan] ?? "#6b7280", fontWeight: 500 }}>{userPlan}</span>
-                      </p>
+                      <p className="text-[10px] text-gray-500">Plan: {planBadge}</p>
                     </div>
                   </div>
 
