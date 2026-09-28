@@ -1,241 +1,480 @@
 "use client";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
 
-const services = [
-  {
-    title: "AI Caption Generator",
-    desc: "Buat caption Instagram & promosi otomatis yang engaging",
-    route: "/caption",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      </svg>
-    ),
-    accent: "#10b981",
-    lightBg: "#ecfdf5",
-    tag: "Social Media",
-  },
-  {
-    title: "AI Business Profile",
-    desc: "Profil usaha profesional untuk UMKM yang menarik investor",
-    route: "/profile",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
-        <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-      </svg>
-    ),
-    accent: "#6366f1",
-    lightBg: "#eef2ff",
-    tag: "Branding",
-  },
-  {
-    title: "AI Logo Usaha",
-    desc: "Buat logo profesional & unik untuk brand UMKM-mu dalam hitungan detik",
-    route: "/logo",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-      </svg>
-    ),
-    accent: "#8b5cf6",
-    lightBg: "#f5f3ff",
-    tag: "Branding",
-    isNew: true,
-  },
-  {
-    title: "AI Product Photo",
-    desc: "Generate foto produk profesional tanpa studio mahal",
-    route: "/photo",
-    icon: (
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-        <circle cx="12" cy="13" r="4" />
-      </svg>
-    ),
-    accent: "#0ea5e9",
-    lightBg: "#f0f9ff",
-    tag: "Visual",
-    isNew: true,
-  },
-];
+import { useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { signIn, useSession } from "next-auth/react";
+import { PLANS } from "@/app/lib/plan";
+
+/* ---------------------------------------------------------
+   KONFIGURASI
+   - MAX_DEMO_TURNS : jumlah pesan di mode coba (samakan dengan server).
+   - PLAN_ROUTE : halaman Plan & Penggunaan.
+   - UNLIMITED  : nilai batas yang dianggap "tanpa batas" di PLANS.
+---------------------------------------------------------- */
+const MAX_DEMO_TURNS = 6;
+const PLAN_ROUTE = "/plan";
+const UNLIMITED = 999;
+
+type Msg = { role: "user" | "assistant"; content: string };
 
 type Stat = { label: string; value: string; icon: string };
 
+type Plan = {
+  label: string;
+  price: number;
+  color: string;
+  limits: Record<string, number>;
+  capacity: { historyDays: number; products: number };
+};
+
+const plans: Record<string, Plan> = PLANS;
+
+const FEATURE_LABEL: Record<string, string> = {
+  caption: "Caption",
+  logo: "Logo",
+  photo: "Foto produk",
+  profile: "Profil bisnis",
+  finance: "Catat keuangan",
+  hpp: "Hitung HPP",
+};
+
+/* Tiap pilar punya alat (chip) dengan contoh permintaannya sendiri. */
+const pillars = [
+  {
+    title: "Pemasaran",
+    desc: "Caption, foto produk, logo, dan profil usaha, semuanya dari satu percakapan.",
+    example: "Buatkan caption Instagram untuk keripik pisang saya",
+    tools: [
+      { label: "Caption", prompt: "Buatkan caption Instagram untuk keripik pisang saya" },
+      { label: "Foto produk", prompt: "Buatkan foto produk yang menarik untuk jualan saya" },
+      { label: "Logo", prompt: "Buatkan logo untuk usaha keripik pisang saya" },
+      { label: "Profil usaha", prompt: "Buatkan profil usaha untuk toko keripik pisang saya" },
+    ],
+    available: true,
+    accent: "#059669",
+    lightBg: "#ecfdf5",
+    path: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z",
+  },
+  {
+    title: "Catat keuangan",
+    desc: "Ceritakan penjualan dan biaya hari ini. Labain mencatat dan menghitung labanya.",
+    example: "Hari ini jual 40 bungkus @Rp15.000, biaya produksi Rp350.000",
+    tools: [
+      { label: "Penjualan", prompt: "Hari ini saya jual 40 bungkus keripik @Rp15.000" },
+      { label: "Biaya", prompt: "Hari ini belanja bahan Rp300.000 dan bayar pegawai Rp100.000" },
+      { label: "Laba harian", prompt: "Berapa laba saya hari ini?" },
+    ],
+    available: true,
+    accent: "#0369a1",
+    lightBg: "#f0f9ff",
+    path: "M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6",
+  },
+  {
+    title: "Harga & HPP",
+    desc: "Hitung modal, margin, dan harga jual yang aman dari biaya nyata usahamu.",
+    example: "Hitung harga jual keripik pisang, modal per bungkus Rp8.000",
+    tools: [
+      { label: "HPP", prompt: "Hitung HPP keripik pisang saya" },
+      { label: "Margin", prompt: "Berapa margin kalau saya jual Rp15.000 per bungkus?" },
+      { label: "Titik impas", prompt: "Berapa bungkus yang harus terjual agar balik modal?" },
+    ],
+    available: true,
+    accent: "#7c3aed",
+    lightBg: "#f5f3ff",
+    path: "M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82zM7 7h.01",
+  },
+];
+
+const suggestions = [
+  "Buat caption untuk produk saya",
+  "Hitung harga jual produk saya",
+  "Bantu promosi usaha saya",
+];
+
+const steps = [
+  { title: "Ceritakan kebutuhanmu", desc: "Tulis dengan bahasa biasa. Tidak perlu memahami istilah AI.", style: "bg-emerald-50 text-emerald-700" },
+  { title: "Labain memahami", desc: "AI memahami usahamu lalu memilih alat yang sesuai: caption, hitungan, atau catatan.", style: "bg-indigo-50 text-indigo-700" },
+  { title: "Dapatkan hasilnya", desc: "Hasil siap pakai. Masuk untuk menyimpan data dan riwayat usahamu.", style: "bg-purple-50 text-purple-700" },
+];
+
+const focusRing =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-700";
+
 export default function HomeClient({ stats }: { stats: Stat[] }) {
   const router = useRouter();
-  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const { status } = useSession();
+  const [prompt, setPrompt] = useState("");
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  const userTurns = messages.filter((m) => m.role === "user").length;
+  const limitReached = userTurns >= MAX_DEMO_TURNS;
+
+  async function runDemo() {
+    const q = prompt.trim();
+    if (!q || loading || limitReached) return;
+    const next: Msg[] = [...messages, { role: "user", content: q }];
+    setMessages(next);
+    setPrompt("");
+    setError("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/demo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Terjadi kesalahan. Coba lagi.");
+      setMessages([...next, { role: "assistant", content: data.reply }]);
+    } catch (e) {
+      // Kembalikan pesan ke kotak supaya bisa dikirim ulang.
+      setMessages(messages);
+      setPrompt(q);
+      setError(e instanceof Error ? e.message : "Terjadi kesalahan. Coba lagi.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function resetDemo() {
+    setMessages([]);
+    setError("");
+    setPrompt("");
+  }
+
+  // Kartu dan chip mengisi kotak chat, bukan pindah halaman.
+  function fillPrompt(text: string) {
+    setPrompt(text);
+    inputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    inputRef.current?.focus({ preventScroll: true });
+  }
+
+  function handlePlan(key: string) {
+    if (key === "FREE") return fillPrompt(prompt);
+    if (status === "loading") return;
+    if (status === "authenticated") return router.push(PLAN_ROUTE);
+    signIn(undefined, { callbackUrl: PLAN_ROUTE });
+  }
 
   return (
-    <div
-      className="min-h-screen bg-gray-50"
-      style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}
-    >
-      {/* ── HERO ── */}
-      <div className="relative overflow-hidden bg-white border-b border-gray-100">
-        <div
-          className="absolute -top-20 -right-20 w-80 h-80 rounded-full opacity-10"
-          style={{ background: "radial-gradient(circle, #10b981, transparent)" }}
-        />
-        <div
-          className="absolute -bottom-10 -left-10 w-60 h-60 rounded-full opacity-8"
-          style={{ background: "radial-gradient(circle, #6366f1, transparent)" }}
-        />
+    <main className="min-h-screen bg-gray-50" style={{ fontFamily: "'DM Sans', 'Segoe UI', sans-serif" }}>
+      {/* ================= HERO ================= */}
+      <section className="relative overflow-hidden bg-white border-b border-gray-100">
+        <div className="absolute -top-32 -right-32 w-[420px] h-[420px] rounded-full bg-emerald-400/10 blur-3xl" />
+        <div className="absolute -bottom-40 -left-32 w-[380px] h-[380px] rounded-full bg-indigo-400/10 blur-3xl" />
 
-        <div className="relative max-w-5xl mx-auto px-8 py-14">
-          <div className="flex items-start justify-between flex-wrap gap-6">
-            <div>
-              <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-700 text-xs font-semibold px-3 py-1.5 rounded-full mb-4 border border-emerald-100">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block" />
-                Platform AI untuk UMKM Indonesia
-              </div>
-
-              <h1
-                className="text-4xl font-bold text-gray-900 leading-tight mb-3"
-                style={{ letterSpacing: "-0.02em" }}
-              >
-                Lab<span className="text-emerald-500">AI</span>n: Biar AI yang kerja, <br />
-                <span className="text-emerald-500">Anda fokus naik kelas.</span>
-              </h1>
-
-              <p className="text-gray-600 text-lg font-medium mb-2">
-                Satu Klik untuk Digitalisasi Bisnis Anda.
-              </p>
-
-              <p className="text-gray-500 text-base max-w-lg leading-relaxed">
-                Dari caption sosmed hingga foto produk semua tersedia dalam satu platform yang dirancang khusus untuk UMKM.
-              </p>
-            </div>
-
-            {/* Quick action */}
-            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-5 min-w-[220px]">
-              <p className="text-xs text-gray-400 font-medium mb-1">Mulai cepat</p>
-              <p className="text-sm font-semibold text-gray-700 mb-3">Apa yang kamu butuhkan hari ini?</p>
-              <button
-                onClick={() => router.push("/caption")}
-                className="w-full text-sm bg-emerald-500 hover:bg-emerald-600 text-white font-medium py-2 px-4 rounded-xl transition-colors"
-              >
-                Buat Caption →
-              </button>
-              <button
-                onClick={() => router.push("/photo")}
-                className="w-full text-sm bg-white hover:bg-gray-50 text-gray-700 font-medium py-2 px-4 rounded-xl border border-gray-200 transition-colors mt-2"
-              >
-                Generate Foto Produk →
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-5xl mx-auto px-8 py-10">
-
-        {/* ── STATS — data dari DB ── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-          {stats.map((s, i) => (
-            <div key={i} className="bg-white rounded-2xl border border-gray-100 px-5 py-4 shadow-sm">
-              <div className="text-2xl mb-1">{s.icon}</div>
-              <div
-                className="text-2xl font-bold text-gray-900"
-                style={{ letterSpacing: "-0.02em" }}
-              >
-                {s.value}
-              </div>
-              <div className="text-xs text-gray-400 mt-0.5">{s.label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* ── SECTION TITLE ── */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h2 className="text-lg font-bold text-gray-800">Layanan AI</h2>
-            <p className="text-sm text-gray-400 mt-0.5">Pilih tool yang sesuai kebutuhanmu</p>
-          </div>
-          <span className="text-xs text-gray-400 bg-gray-100 px-3 py-1 rounded-full">
-            {services.length} tools tersedia
-          </span>
-        </div>
-
-        {/* ── SERVICE GRID ── */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {services.map((s, i) => (
-            <div
-              key={i}
-              onClick={() => router.push(s.route)}
-              onMouseEnter={() => setHoveredIdx(i)}
-              onMouseLeave={() => setHoveredIdx(null)}
-              className="group cursor-pointer bg-white rounded-2xl border border-gray-100 p-6 shadow-sm hover:shadow-md transition-all duration-200 relative overflow-hidden"
-              style={{
-                transform: hoveredIdx === i ? "translateY(-2px)" : "translateY(0)",
-                transition: "transform 200ms ease, box-shadow 200ms ease",
-              }}
-            >
-              <div
-                className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-2xl"
-                style={{
-                  background: `radial-gradient(circle at top left, ${s.accent}08, transparent 60%)`,
-                }}
-              />
-
-              {s.isNew && (
-                <span
-                  className="absolute top-4 right-4 text-[10px] font-bold px-2 py-0.5 rounded-full"
-                  style={{ background: s.accent + "18", color: s.accent }}
-                >
-                  NEW
-                </span>
-              )}
-
-              <div
-                className="w-11 h-11 rounded-xl flex items-center justify-center mb-4"
-                style={{ background: s.lightBg, color: s.accent }}
-              >
-                {s.icon}
-              </div>
-
-              <span
-                className="text-[10px] font-semibold uppercase tracking-wider mb-2 block"
-                style={{ color: s.accent }}
-              >
-                {s.tag}
+        <div className="relative max-w-5xl mx-auto px-6 md:px-8 pt-12 pb-16 md:pt-16 md:pb-20">
+          <div className="max-w-3xl mx-auto text-center">
+            <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-800 text-xs font-semibold px-3.5 py-2 rounded-full border border-emerald-100 mb-6">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping motion-reduce:animate-none absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-600" />
               </span>
+              Asisten AI untuk UMKM Indonesia
+            </div>
 
-              <h3 className="text-base font-bold text-gray-800 mb-1.5 leading-snug">{s.title}</h3>
-              <p className="text-sm text-gray-400 leading-relaxed mb-5">{s.desc}</p>
+            <h1 className="text-4xl md:text-5xl lg:text-[56px] font-bold text-gray-900 leading-[1.08] mb-5" style={{ letterSpacing: "-0.035em" }}>
+              Punya usaha, punya asisten.
+              <br />
+              <span className="text-emerald-700">Biar Labain yang bantu.</span>
+            </h1>
 
-              <div className="flex items-center justify-between">
-                <span
-                  className="text-sm font-semibold"
-                  style={{ color: s.accent }}
-                >
-                  Coba Sekarang
-                </span>
-                <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200"
-                  style={{
-                    background: hoveredIdx === i ? s.accent : s.lightBg,
-                    color: hoveredIdx === i ? "white" : s.accent,
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                    <polyline points="12 5 19 12 12 19" />
-                  </svg>
+            <p className="text-base md:text-lg text-gray-600 leading-relaxed max-w-2xl mx-auto">
+              Ceritakan kebutuhan usahamu dalam bahasa sehari-hari. Labain membantu promosi, menghitung harga jual, dan mencatat keuangan.
+            </p>
+          </div>
+
+          {/* Kotak percakapan (teaser asisten) */}
+          <div className="max-w-2xl mx-auto mt-9">
+            <div className="bg-white border border-gray-200 rounded-3xl shadow-lg shadow-gray-200/50 p-3">
+              <div className="bg-gray-50 rounded-2xl p-4 md:p-5">
+                {messages.length > 0 && (
+                  <div aria-live="polite" className="mb-4 space-y-3 max-h-80 overflow-y-auto pr-1">
+                    {messages.map((m, i) => (
+                      <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+                        <p
+                          className={`whitespace-pre-wrap text-sm leading-relaxed px-3.5 py-2.5 rounded-2xl max-w-[88%] ${
+                            m.role === "user"
+                              ? "bg-emerald-600 text-white rounded-br-md"
+                              : "bg-white border border-gray-200 text-gray-800 rounded-bl-md"
+                          }`}
+                        >
+                          {m.content}
+                        </p>
+                      </div>
+                    ))}
+                    {loading && <p className="text-xs text-gray-500">Labain sedang mengetik…</p>}
+                  </div>
+                )}
+
+                <label htmlFor="labain-prompt" className="block text-sm font-medium text-gray-700">
+                  Apa yang ingin kamu lakukan dengan usahamu?
+                </label>
+
+                <div className="mt-3 bg-white border border-gray-200 focus-within:border-emerald-400 rounded-2xl p-2 flex items-end gap-2 transition-colors">
+                  <textarea
+                    id="labain-prompt"
+                    ref={inputRef}
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        runDemo();
+                      }
+                    }}
+                    rows={2}
+                    maxLength={600}
+                    disabled={limitReached}
+                    placeholder="Contoh: Saya jualan keripik pisang, bantu buatkan caption promosi..."
+                    className="flex-1 resize-none bg-transparent outline-none text-sm text-gray-800 placeholder:text-gray-500 px-2 py-2"
+                  />
+                  <button
+                    type="button"
+                    onClick={runDemo}
+                    disabled={loading || !prompt.trim() || limitReached}
+                    aria-label="Kirim ke Labain"
+                    className={`shrink-0 w-10 h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${focusRing}`}
+                  >
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <line x1="22" y1="2" x2="11" y2="13" />
+                      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                    </svg>
+                  </button>
+                </div>
+
+                {error && (
+                  <p role="alert" className="text-xs text-red-600 mt-2">{error}</p>
+                )}
+
+                {(messages.length > 0 || limitReached) && (
+                  <div className="mt-3 rounded-xl bg-emerald-50 border border-emerald-100 px-3.5 py-3 text-xs text-emerald-900 flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      {limitReached
+                        ? "Batas mode coba tercapai. Masuk untuk melanjutkan."
+                        : "Suka hasilnya? Masuk untuk menyimpan riwayat dan data usahamu."}
+                    </span>
+                    <span className="flex items-center gap-3 font-semibold">
+                      <Link href="/register" className="underline">Daftar gratis</Link>
+                      <button type="button" onClick={resetDemo} className="underline">Mulai baru</button>
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {suggestions.map((item) => (
+                    <button
+                      type="button"
+                      key={item}
+                      onClick={() => setPrompt(item)}
+                      className={`text-xs bg-white border border-gray-200 hover:border-emerald-300 hover:text-emerald-700 text-gray-600 px-3 py-1.5 rounded-full transition-colors ${focusRing}`}
+                    >
+                      {item}
+                    </button>
+                  ))}
                 </div>
               </div>
+              <p className="text-[11px] text-gray-500 text-center py-2">
+                Coba dulu, tidak perlu login. Mode coba tidak menyimpan percakapan.
+              </p>
             </div>
+          </div>
+
+          <div className="flex justify-center mt-6">
+            <button
+              type="button"
+              onClick={() => (prompt.trim() ? runDemo() : fillPrompt(""))}
+              className={`inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm px-5 py-3 rounded-xl transition-colors shadow-sm ${focusRing}`}
+            >
+              Coba Labain gratis
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* ================= STATS ================= */}
+      {stats.length > 0 && (
+        <section className="max-w-5xl mx-auto px-6 md:px-8 py-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+            {stats.map((s) => (
+              <div key={s.label} className="bg-white rounded-2xl border border-gray-100 px-4 md:px-5 py-4 shadow-sm">
+                <div className="text-xl md:text-2xl mb-1" aria-hidden="true">{s.icon}</div>
+                <div className="text-xl md:text-2xl font-bold text-gray-900" style={{ letterSpacing: "-0.02em" }}>{s.value}</div>
+                <div className="text-xs text-gray-500 mt-0.5">{s.label}</div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* ================= PILAR ================= */}
+      <section id="fitur" className="max-w-5xl mx-auto px-6 md:px-8 py-8 md:py-12">
+        <div className="text-center max-w-xl mx-auto mb-8">
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900" style={{ letterSpacing: "-0.025em" }}>
+            Satu asisten untuk urusan usahamu
+          </h2>
+          <p className="text-sm text-gray-600 mt-3">
+            Pilih contoh untuk mengisi kotak chat di atas, lalu ubah sesuai usahamu.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-4">
+          {pillars.map((p) => (
+            <article
+              key={p.title}
+              className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm flex flex-col"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: p.lightBg, color: p.accent }}>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d={p.path} />
+                  </svg>
+                </div>
+                <span
+                  className="text-[11px] font-semibold px-2.5 py-1 rounded-full"
+                  style={
+                    p.available
+                      ? { background: p.lightBg, color: p.accent }
+                      : { background: "#f3f4f6", color: "#4b5563" }
+                  }
+                >
+                  {p.available ? "Sudah tersedia" : "Segera hadir"}
+                </span>
+              </div>
+
+              <h3 className="text-base font-bold text-gray-900 mt-4">{p.title}</h3>
+              <p className="text-sm text-gray-600 leading-relaxed mt-1.5">{p.desc}</p>
+
+              <ul className="flex flex-wrap gap-1.5 mt-4 list-none p-0">
+                {p.tools.map((t) => (
+                  <li key={t.label}>
+                    <button
+                      type="button"
+                      onClick={() => fillPrompt(t.prompt)}
+                      className="text-xs bg-gray-50 border border-gray-200 hover:bg-white text-gray-700 px-2.5 py-1 rounded-full transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                      style={{ outlineColor: p.accent }}
+                    >
+                      {t.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+
+              <button
+                type="button"
+                onClick={() => fillPrompt(p.example)}
+                className="mt-auto pt-5 text-left text-sm font-semibold hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 rounded"
+                style={{ color: p.accent, outlineColor: p.accent }}
+              >
+                Coba contoh ini
+              </button>
+            </article>
           ))}
         </div>
 
-        {/* ── FOOTER NOTE ── */}
-        <div className="mt-10 text-center">
-          <p className="text-xs text-gray-300">
-            © 2026 Labain · Dibuat dengan ❤️ untuk pelaku usaha Indonesia
-          </p>
+        <p className="text-xs text-gray-500 text-center mt-5">
+          Analisis usaha dan pendamping perizinan (NIB, halal, PIRT) sedang disiapkan.
+        </p>
+      </section>
+
+      {/* ================= CARA KERJA ================= */}
+      <section className="bg-white border-y border-gray-100">
+        <div className="max-w-5xl mx-auto px-6 md:px-8 py-12 md:py-14">
+          <div className="text-center mb-9">
+            <h2 className="text-2xl font-bold text-gray-900" style={{ letterSpacing: "-0.025em" }}>
+              Semudah ngobrol dengan asisten
+            </h2>
+            <p className="text-sm text-gray-600 mt-2">Tidak perlu menjadi ahli digital untuk menggunakan Labain.</p>
+          </div>
+          <ol className="grid md:grid-cols-3 gap-6 list-none p-0 m-0">
+            {steps.map((step, i) => (
+              <li key={step.title} className="text-center">
+                <div className={`w-12 h-12 mx-auto rounded-2xl flex items-center justify-center font-bold text-lg mb-3 ${step.style}`} aria-hidden="true">{i + 1}</div>
+                <h3 className="font-bold text-gray-900 text-sm">{step.title}</h3>
+                <p className="text-xs text-gray-600 mt-1.5 leading-relaxed">{step.desc}</p>
+              </li>
+            ))}
+          </ol>
         </div>
-      </div>
-    </div>
+      </section>
+
+      {/* ================= HARGA (dari PLANS) ================= */}
+      <section id="harga" className="max-w-5xl mx-auto px-6 md:px-8 py-12 md:py-14">
+        <div className="text-center max-w-xl mx-auto mb-9">
+          <h2 className="text-2xl md:text-3xl font-bold text-gray-900" style={{ letterSpacing: "-0.025em" }}>
+            Mulai gratis, upgrade saat usahamu berkembang
+          </h2>
+          <p className="text-sm text-gray-600 mt-3">Batas pemakaian dihitung per hari dan bisa berubah kapan saja lewat halaman Plan.</p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-4">
+          {Object.entries(plans).map(([key, plan]) => {
+            const featured = key === "PRO";
+            return (
+              <div
+                key={key}
+                className="bg-white rounded-2xl p-5 flex flex-col relative"
+                style={{ border: featured ? `1.5px solid ${plan.color}` : "1px solid #f3f4f6" }}
+              >
+                {featured && (
+                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 text-[10px] font-semibold text-white px-3 py-0.5 rounded-full" style={{ background: plan.color }}>
+                    Terpopuler
+                  </span>
+                )}
+                <h3 className="text-sm font-bold text-gray-800">{plan.label}</h3>
+                <p className="text-2xl font-bold text-gray-900 mt-1 mb-4" style={{ letterSpacing: "-0.02em" }}>
+                  {plan.price === 0 ? "Gratis" : `Rp${plan.price.toLocaleString("id-ID")}`}
+                  {plan.price > 0 && <span className="text-xs font-normal text-gray-500"> /bulan</span>}
+                </p>
+
+                <ul className="space-y-1.5 text-xs mb-3 list-none p-0">
+                  {Object.entries(plan.limits).map(([feat, lim]) => (
+                    <li key={feat} className="flex justify-between text-gray-600">
+                      <span>{FEATURE_LABEL[feat] ?? feat}</span>
+                      <span className="font-semibold text-gray-800">
+                        {lim === 0 ? "Tidak tersedia" : lim >= UNLIMITED ? "Tanpa batas" : `${lim}×/hari`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+
+                <ul className="space-y-1.5 text-xs border-t border-gray-100 pt-3 mb-5 list-none p-0">
+                  <li className="flex justify-between text-gray-600">
+                    <span>Riwayat data</span>
+                    <span className="font-semibold text-gray-800">{plan.capacity.historyDays} hari</span>
+                  </li>
+                  <li className="flex justify-between text-gray-600">
+                    <span>Produk tersimpan</span>
+                    <span className="font-semibold text-gray-800">{plan.capacity.products} produk</span>
+                  </li>
+                </ul>
+
+                <button
+                  type="button"
+                  onClick={() => handlePlan(key)}
+                  className={`mt-auto w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 ${focusRing}`}
+                  style={
+                    key === "FREE"
+                      ? { background: "#f3f4f6", color: "#374151" }
+                      : { background: plan.color, color: "#fff" }
+                  }
+                >
+                  {key === "FREE" ? "Coba gratis" : `Pilih ${plan.label}`}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ================= FOOTER ================= */}
+      <footer className="max-w-5xl mx-auto px-6 md:px-8 pb-8 text-center">
+        <p className="text-xs text-gray-500">© 2026 Labain. Dibuat untuk pelaku usaha Indonesia.</p>
+      </footer>
+    </main>
   );
 }
