@@ -1,86 +1,52 @@
 import crypto from "crypto";
-import { prisma } from "@/app/lib/prisma";
+import { syncTransaction } from "@/app/lib/payment";
 
 export async function POST(req) {
+  const serverKey = process.env.MIDTRANS_SERVER_KEY;
+  if (!serverKey) {
+    console.error("MIDTRANS_SERVER_KEY belum diset");
+    return Response.json({ error: "Server misconfigured" }, { status: 500 });
+  }
+
+  let body;
   try {
-    // 1. Ambil body dalam bentuk teks untuk logging/debug
-    const rawBody = await req.text();
-    let body;
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+  }
 
-    try {
-      body = JSON.parse(rawBody);
-    } catch (err) {
-      console.error("❌ JSON parse error:", err);
-      return Response.json({ error: "Invalid JSON" }, { status: 400 });
-    }
+  const { order_id, status_code, gross_amount, signature_key } = body ?? {};
+  if (!order_id || !status_code || !gross_amount || !signature_key) {
+    return Response.json({ error: "Invalid payload" }, { status: 400 });
+  }
 
-    const serverKey = process.env.MIDTRANS_SERVER_KEY;
+  // Verifikasi signature (gross_amount dipakai persis sebagai string dari Midtrans)
+  const expected = crypto
+    .createHash("sha512")
+    .update(order_id + status_code + gross_amount + serverKey)
+    .digest("hex");
 
-    // 2. Validasi field wajib dari Midtrans
-    if (!body.order_id || !body.status_code || !body.gross_amount || !body.signature_key) {
-      return Response.json({ error: "Invalid payload" }, { status: 400 });
-    }
+  const a = Buffer.from(expected);
+  const b = Buffer.from(String(signature_key));
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    console.warn("Invalid signature untuk", order_id);
+    return Response.json({ error: "Invalid signature" }, { status: 403 });
+  }
 
-    // 3. Verifikasi Signature Key (Keamanan Server-to-Server)
-    const expectedSignature = crypto
-      .createHash("sha512")
-      .update(
-        body.order_id +
-        body.status_code +
-        body.gross_amount +
-        serverKey
-      )
-      .digest("hex");
+  try {
+    const result = await syncTransaction(order_id, body);
 
-    if (expectedSignature !== body.signature_key) {
-      console.warn("⚠️ Invalid Signature detected!");
-      return Response.json({ error: "Invalid signature" }, { status: 403 });
-    }
-
-    const orderId = body.order_id;
-    const transactionStatus = body.transaction_status;
-
-    console.log(`🔔 Webhook received for ${orderId}: ${transactionStatus}`);
-
-    try {
-      // 4. Update status di tabel transaction
-      // Menggunakan update karena data sudah dibuat di api/payment/create
-      const updatedTrx = await prisma.transaction.update({
-        where: { order_id: orderId },
-        data: { 
-          status: transactionStatus.toUpperCase() 
-        },
-      });
-
-      // 5. Logika Upgrade User jika pembayaran sukses
-      const isSuccess = transactionStatus === "settlement" || transactionStatus === "capture";
-      
-      if (isSuccess) {
-        // Ambil data user untuk memastikan tidak double upgrade jika webhook terkirim 2x
-        const user = await prisma.user.findUnique({
-          where: { id: updatedTrx.user_id }
-        });
-
-        // Hanya update jika plan belum berubah atau masa berlaku sudah lewat (menghindari tumpang tindih)
-        await prisma.user.update({
-          where: { id: updatedTrx.user_id },
-          data: {
-            plan: updatedTrx.plan, // Dinamis: STARTER atau PRO
-            planExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // Tambah 30 hari
-          },
-        });
-
-        console.log(`✅ User ${updatedTrx.user_id} successfully upgraded to ${updatedTrx.plan}`);
-      }
-
-    } catch (err) {
-      console.error("❌ Database Error:", err.message);
-      // Tetap return OK agar Midtrans tidak mengirim ulang notifikasi terus-menerus
+    // Order tidak ada di database (mis. tombol "Test notification" di dashboard Midtrans)
+    if (result === null) {
+      console.warn("Webhook untuk order yang tidak dikenal:", order_id);
+    } else {
+      console.log(`Webhook ${order_id}: ${body.transaction_status} -> ${result}`);
     }
 
     return Response.json({ status: "ok" });
   } catch (error) {
-    console.error("🔥 Webhook Fatal Error:", error);
+    // 500 supaya Midtrans mengirim ulang notifikasi
+    console.error("Webhook error:", error?.message ?? error);
     return Response.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

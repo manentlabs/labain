@@ -2,50 +2,46 @@ import midtransClient from "midtrans-client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/lib/auth";
 import { prisma } from "@/app/lib/prisma";
+import { PLANS } from "@/app/lib/plan";
 
 const snap = new midtransClient.Snap({
-  isProduction: true,
+  // Set MIDTRANS_IS_PRODUCTION=true di Hostinger hanya jika memakai server key production
+  isProduction: process.env.MIDTRANS_IS_PRODUCTION === "true",
   serverKey: process.env.MIDTRANS_SERVER_KEY,
 });
 
 export async function POST(req) {
   try {
-    // 🔐 AUTH CHECK
+    // Auth
     const session = await getServerSession(authOptions);
-    if (!session) {
-      return Response.json(
-        { error: "Unauthorized" },
-        { status: 401 }
-      );
+    if (!session?.user?.id) {
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // 📦 PARSE BODY
-    const { plan } = await req.json();
+    // Body: hanya key paket yang dipercaya dari client
+    const body = await req.json().catch(() => ({}));
+    const planKey = body?.plan?.key;
 
-    // ❌ VALIDASI PLAN
-    if (!plan || !plan.key || !plan.price) {
-      return Response.json(
-        { error: "Plan tidak valid" },
-        { status: 400 }
-      );
+    // Harga selalu dari server
+    const plan = PLANS[planKey];
+    if (!plan || plan.price <= 0) {
+      return Response.json({ error: "Plan tidak valid" }, { status: 400 });
     }
 
-    // 🧾 ORDER ID UNIQUE
-    const orderId = `ORDER-${Date.now()}-${session.user.id}`;
+    const orderId = `LB-${Date.now()}-${session.user.id.slice(-8)}`;
 
-    // 🛑 CEK DUPLIKAT ORDER
-    const existing = await prisma.transaction.findUnique({
-      where: { order_id: orderId },
+    // Simpan dulu sebagai PENDING supaya pembayaran selalu bisa dicocokkan
+    await prisma.transaction.create({
+      data: {
+        id: orderId,
+        order_id: orderId,
+        user_id: session.user.id,
+        plan: planKey,
+        amount: plan.price,
+        status: "PENDING",
+      },
     });
 
-    if (existing) {
-      return Response.json(
-        { error: "Duplicate order" },
-        { status: 409 }
-      );
-    }
-
-    // 💳 MIDTRANS PARAMETER
     const parameter = {
       transaction_details: {
         order_id: orderId,
@@ -57,7 +53,7 @@ export async function POST(req) {
       },
       item_details: [
         {
-          id: plan.key,
+          id: planKey,
           price: plan.price,
           quantity: 1,
           name: `Upgrade ke Plan ${plan.label}`,
@@ -65,34 +61,22 @@ export async function POST(req) {
       ],
     };
 
-    // 🚀 CREATE TRANSACTION MIDTRANS
-    const transaction = await snap.createTransaction(parameter);
-
-    // 💾 SIMPAN KE DATABASE
-    await prisma.transaction.create({
-      data: {
-        id: orderId,
+    try {
+      const transaction = await snap.createTransaction(parameter);
+      return Response.json({
         order_id: orderId,
-        user_id: session.user.id,
-        plan: plan.key || "FREE",
-        amount: plan.price,
-        status: "PENDING",
-      },
-    });
-
-    // 📤 RESPONSE KE FRONTEND
-    return Response.json({
-      order_id: orderId,
-      token: transaction.token,
-      redirect_url: transaction.redirect_url,
-    });
-
+        token: transaction.token,
+        redirect_url: transaction.redirect_url,
+      });
+    } catch (err) {
+      // Midtrans gagal: tandai transaksi supaya tidak menggantung sebagai PENDING
+      await prisma.transaction
+        .update({ where: { order_id: orderId }, data: { status: "FAILED" } })
+        .catch(() => {});
+      throw err;
+    }
   } catch (err) {
-    console.error("Midtrans Error:", err);
-
-    return Response.json(
-      { error: "Gagal membuat transaksi" },
-      { status: 500 }
-    );
+    console.error("Midtrans Error:", err?.ApiResponse ?? err?.message ?? err);
+    return Response.json({ error: "Gagal membuat transaksi" }, { status: 500 });
   }
 }

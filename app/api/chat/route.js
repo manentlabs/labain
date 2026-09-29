@@ -1,4 +1,6 @@
-import { withUsageCheck } from "@/app/lib/withUsageCheck";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/lib/auth";
+import { reserveUsage, refundUsage } from "@/app/lib/usage";
 import { prisma } from "@/app/lib/prisma";
 import { resolveUserId } from "@/app/lib/getUserId";
 import OpenAI from "openai";
@@ -16,6 +18,7 @@ export const maxDuration = 60; // pembuatan gambar bisa memakan 20-40 detik
    - MAX_TOOL_CALLS  : jumlah tool yang dijalankan per pesan.
    - MAX_ENTRIES     : jumlah catatan keuangan per pemanggilan record_finance.
    - MAX_AMOUNT      : batas nilai Int di MySQL (sekitar 2,1 miliar).
+   - UPLOAD_DIR      : folder permanen untuk gambar hasil (atur env UPLOAD_DIR di Hostinger).
 ---------------------------------------------------------- */
 const MAX_HISTORY = 20;
 const MAX_LENGTH = 1000;
@@ -24,6 +27,8 @@ const MAX_TOOL_CALLS = 4;
 const MAX_ENTRIES = 20;
 const MAX_AMOUNT = 2_000_000_000;
 const DEFAULT_PHOTO_PROMPT = "Buatkan foto produk yang menarik dari foto ini.";
+const UPLOAD_DIR =
+  process.env.UPLOAD_DIR || path.join(process.cwd(), "storage", "images");
 
 const SYSTEM_PROMPT = `Kamu adalah Labain, asisten AI untuk pelaku UMKM Indonesia. Semua kebutuhan pengguna dikerjakan langsung di percakapan ini. Jangan pernah menyuruh pengguna pindah halaman atau membuka fitur lain.
 
@@ -64,7 +69,7 @@ Aturan foto produk:
 - prompt_image harus dalam bahasa Inggris, dimulai dengan "Professional product photography of", menjelaskan produk sedetail mungkin (bentuk, warna eksak, bahan, label dan tulisan yang terlihat) sebelum menjelaskan latar, pencahayaan, dan suasana. Produk harus terlihat identik dengan aslinya.
 - Setelah gambar jadi, jelaskan singkat gaya yang dipilih.
 
-Kalau sebuah tool gagal, sampaikan terus terang dan tawarkan untuk mencoba lagi.`;
+Kalau sebuah tool gagal, sampaikan terus terang dan tawarkan untuk mencoba lagi. Kalau tool gagal karena fitur tidak tersedia di paket pengguna atau limit harian habis, sampaikan dengan ramah dan sarankan upgrade paket lewat menu Akun.`;
 
 const tools = [
   {
@@ -215,7 +220,8 @@ function buildSystemPrompt(business, today) {
 
 /* ---------------- Gambar ---------------- */
 
-// Buat gambar dan simpan sebagai file PNG, kembalikan URL-nya.
+// Buat gambar dan simpan sebagai PNG di folder permanen, kembalikan URL-nya.
+// File disajikan oleh app/api/images/[file]/route.js
 async function generateImage(openai, prompt, prefix) {
   const result = await openai.images.generate({
     model: "gpt-image-1",
@@ -228,17 +234,16 @@ async function generateImage(openai, prompt, prefix) {
   const b64 = result.data?.[0]?.b64_json;
   if (!b64) throw new Error("Tidak ada data gambar");
 
-  const dir = path.join(process.cwd(), "public", "tmp");
-  await mkdir(dir, { recursive: true });
+  await mkdir(UPLOAD_DIR, { recursive: true });
 
   const filename = `${prefix}-${randomUUID()}.png`;
-  await writeFile(path.join(dir, filename), Buffer.from(b64, "base64"));
-  return `/tmp/${filename}`;
+  await writeFile(path.join(UPLOAD_DIR, filename), Buffer.from(b64, "base64"));
+  return `/api/images/${filename}`;
 }
 
 /* ---------------- Tool ---------------- */
 
-async function runTool(ctx, name, args) {
+async function runToolInner(ctx, name, args) {
   const { openai, userId, conversationId, hasImage, today } = ctx;
 
   try {
@@ -399,9 +404,46 @@ async function runTool(ctx, name, args) {
   }
 }
 
+// Tool mana memakai kuota fitur mana. Tool yang tidak terdaftar (get_profit) tidak dibatasi.
+const TOOL_FEATURE = {
+  create_logo: "logo",
+  create_product_photo: "photo",
+  record_finance: "finance",
+  save_business_profile: "profile",
+};
+
+// Pesan jatah dulu, jalankan tool, kembalikan jatah kalau gagal (hasil diawali "Gagal").
+async function runTool(ctx, name, args) {
+  const feature = TOOL_FEATURE[name];
+  if (!feature) return runToolInner(ctx, name, args);
+
+  const r = await reserveUsage(ctx.userId, feature);
+  if (!r.allowed) {
+    return { result: `Gagal: ${r.reason} Sampaikan ini ke pengguna dengan ramah.` };
+  }
+
+  let out;
+  try {
+    out = await runToolInner(ctx, name, args);
+  } catch (err) {
+    await refundUsage(ctx.userId, feature).catch(() => {});
+    throw err;
+  }
+
+  if (String(out.result).startsWith("Gagal")) {
+    await refundUsage(ctx.userId, feature).catch(() => {});
+  }
+  return out;
+}
+
 /* ---------------- Handler ---------------- */
 
-export const POST = withUsageCheck("chat", async (req, session) => {
+export async function POST(req) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user?.id) {
+    return Response.json({ error: "Silakan masuk terlebih dahulu." }, { status: 401 });
+  }
+
   let body;
   try {
     body = await req.json();
@@ -533,7 +575,10 @@ export const POST = withUsageCheck("chat", async (req, session) => {
 
     if (!reply && images.length) reply = "Ini hasilnya.";
     if (!reply) {
-      throw Object.assign(new Error("Balasan kosong"), { userMessage: "Labain belum bisa menjawab. Coba tulis ulang pertanyaanmu.", status: 502 });
+      throw Object.assign(new Error("Balasan kosong"), {
+        userMessage: "Labain belum bisa menjawab. Coba tulis ulang pertanyaanmu.",
+        status: 502,
+      });
     }
 
     // Simpan pasangan pesan hanya kalau seluruh proses berhasil.
@@ -570,4 +615,4 @@ export const POST = withUsageCheck("chat", async (req, session) => {
     }
     return Response.json({ error: "Terjadi kesalahan pada asisten. Coba lagi." }, { status: 500 });
   }
-});
+}

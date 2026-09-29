@@ -1,17 +1,20 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { useSession } from "next-auth/react";
 import { PLANS } from "@/app/lib/plan";
 
 const FEATURES_LABEL = {
-  caption:      "Generate caption",
-  logo:         "Buat logo usaha",
-  photo:        "Foto produk AI",
-  profile:      "Profil bisnis usaha",
-  customStyle:  "Gaya kustom",
-  hd:           "Kualitas HD",
-  bulkGenerate: "Generate massal",
+  caption: "Generate caption",
+  logo: "Buat logo usaha",
+  photo: "Foto produk AI",
+  profile: "Profil bisnis usaha",
+  finance: "Catat keuangan",
+  hpp: "Hitung harga jual",
+};
+
+const CAPACITY_LABEL = {
+  historyDays: (n) => `Riwayat chat ${n} hari`,
+  products: (n) => `Simpan ${n} produk`,
 };
 
 const CheckIcon = () => (
@@ -27,56 +30,58 @@ const CrossIcon = () => (
 );
 
 function UsageBar({ used, limit }) {
-  const pct = limit >= 999 ? 100 : Math.min((used / limit) * 100, 100);
-  const full = used >= limit && limit < 999;
+  const unlimited = limit >= 999;
+  const pct = unlimited ? 100 : limit > 0 ? Math.min((used / limit) * 100, 100) : 0;
+  const full = !unlimited && limit > 0 && used >= limit;
   return (
-    <div style={{
-      width: "100%",
-      background: "#f3f4f6",
-      borderRadius: 100,
-      height: 3,
-      marginTop: 8,
-      overflow: "hidden",
-    }}>
-      <div style={{
-        width: `${pct}%`,
-        height: "100%",
-        borderRadius: 100,
-        background: full ? "#ef4444" : "#059669",
-        transition: "width 0.4s ease",
-      }} />
+    <div style={{ width: "100%", background: "#f3f4f6", borderRadius: 100, height: 3, marginTop: 8, overflow: "hidden" }}>
+      <div
+        style={{
+          width: `${pct}%`,
+          height: "100%",
+          borderRadius: 100,
+          background: full ? "#ef4444" : "#059669",
+          transition: "width 0.4s ease",
+        }}
+      />
     </div>
   );
 }
 
 function PlanCard({ planKey, plan, isActive, isFeatured, onUpgrade }) {
-  return (
-    <div style={{
-      background: "#fff",
-      borderRadius: 16,
-      border: isActive ? `1.5px solid ${plan.color}` : "0.5px solid #f0f0f0",
-      padding: isFeatured ? "28px 16px 18px" : "18px 16px",
-      display: "flex",
-      flexDirection: "column",
-      position: "relative",
-      transition: "border-color 0.2s",
-    }}>
+  const limits = plan.limits ?? {};
+  const capacity = plan.capacity ?? {};
 
+  return (
+    <div
+      style={{
+        background: "#fff",
+        borderRadius: 16,
+        border: isActive ? `1.5px solid ${plan.color}` : "0.5px solid #f0f0f0",
+        padding: isFeatured ? "28px 16px 18px" : "18px 16px",
+        display: "flex",
+        flexDirection: "column",
+        position: "relative",
+        transition: "border-color 0.2s",
+      }}
+    >
       {isFeatured && (
-        <div style={{
-          position: "absolute",
-          top: -1,
-          left: "50%",
-          transform: "translateX(-50%)",
-          background: plan.color,
-          color: "#fff",
-          fontSize: 10,
-          fontWeight: 500,
-          padding: "3px 12px",
-          borderRadius: "0 0 8px 8px",
-          whiteSpace: "nowrap",
-          letterSpacing: "0.03em",
-        }}>
+        <div
+          style={{
+            position: "absolute",
+            top: -1,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: plan.color,
+            color: "#fff",
+            fontSize: 10,
+            fontWeight: 500,
+            padding: "3px 12px",
+            borderRadius: "0 0 8px 8px",
+            whiteSpace: "nowrap",
+            letterSpacing: "0.03em",
+          }}
+        >
           Terpopuler
         </div>
       )}
@@ -84,14 +89,16 @@ function PlanCard({ planKey, plan, isActive, isFeatured, onUpgrade }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
         <span style={{ fontSize: 13, fontWeight: 500, color: "#111827" }}>{plan.label}</span>
         {isActive && (
-          <span style={{
-            fontSize: 10,
-            fontWeight: 500,
-            padding: "2px 8px",
-            borderRadius: 100,
-            background: `${plan.color}18`,
-            color: plan.color,
-          }}>
+          <span
+            style={{
+              fontSize: 10,
+              fontWeight: 500,
+              padding: "2px 8px",
+              borderRadius: 100,
+              background: `${plan.color}18`,
+              color: plan.color,
+            }}
+          >
             Aktif
           </span>
         )}
@@ -114,11 +121,11 @@ function PlanCard({ planKey, plan, isActive, isFeatured, onUpgrade }) {
         Limit harian
       </p>
       <div style={{ marginBottom: 12, display: "flex", flexDirection: "column", gap: 4 }}>
-        {Object.entries(plan.limits).map(([feat, lim]) => (
+        {Object.entries(limits).map(([feat, lim]) => (
           <div key={feat} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 11, color: "#6b7280" }}>{FEATURES_LABEL[feat] ?? feat}</span>
-            <span style={{ fontSize: 11, fontWeight: 500, color: "#374151" }}>
-              {lim >= 999 ? "Unlimited" : `${lim}×`}
+            <span style={{ fontSize: 11, fontWeight: 500, color: lim === 0 ? "#d1d5db" : "#374151" }}>
+              {lim === 0 ? "-" : lim >= 999 ? "Unlimited" : `${lim}×`}
             </span>
           </div>
         ))}
@@ -130,11 +137,19 @@ function PlanCard({ planKey, plan, isActive, isFeatured, onUpgrade }) {
         Fitur
       </p>
       <div style={{ marginBottom: 16, display: "flex", flexDirection: "column", gap: 6 }}>
-        {Object.entries(plan.features).map(([feat, enabled]) => (
+        {Object.entries(limits).map(([feat, lim]) => (
           <div key={feat} style={{ display: "flex", alignItems: "center", gap: 7 }}>
-            {enabled ? <CheckIcon /> : <CrossIcon />}
-            <span style={{ fontSize: 11, color: enabled ? "#374151" : "#d1d5db" }}>
+            {lim > 0 ? <CheckIcon /> : <CrossIcon />}
+            <span style={{ fontSize: 11, color: lim > 0 ? "#374151" : "#d1d5db" }}>
               {FEATURES_LABEL[feat] ?? feat}
+            </span>
+          </div>
+        ))}
+        {Object.entries(capacity).map(([key, val]) => (
+          <div key={key} style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <CheckIcon />
+            <span style={{ fontSize: 11, color: "#374151" }}>
+              {CAPACITY_LABEL[key]?.(val) ?? `${key}: ${val}`}
             </span>
           </div>
         ))}
@@ -142,15 +157,17 @@ function PlanCard({ planKey, plan, isActive, isFeatured, onUpgrade }) {
 
       <div style={{ marginTop: "auto" }}>
         {isActive ? (
-          <div style={{
-            width: "100%",
-            padding: "8px 0",
-            textAlign: "center",
-            fontSize: 12,
-            color: plan.color,
-            border: `0.5px solid ${plan.color}`,
-            borderRadius: 8,
-          }}>
+          <div
+            style={{
+              width: "100%",
+              padding: "8px 0",
+              textAlign: "center",
+              fontSize: 12,
+              color: plan.color,
+              border: `0.5px solid ${plan.color}`,
+              borderRadius: 8,
+            }}
+          >
             Plan saat ini
           </div>
         ) : (
@@ -167,17 +184,11 @@ function PlanCard({ planKey, plan, isActive, isFeatured, onUpgrade }) {
               cursor: "pointer",
               transition: "opacity 0.15s",
             }}
-            onMouseOver={e => (e.currentTarget.style.opacity = "0.85")}
-            onMouseOut={e => (e.currentTarget.style.opacity = "1")}
-            onClick={() =>
-              onUpgrade({
-                key: planKey,
-                label: plan.label,
-                price: plan.price,
-              })
-            }
+            onMouseOver={(e) => (e.currentTarget.style.opacity = "0.85")}
+            onMouseOut={(e) => (e.currentTarget.style.opacity = "1")}
+            onClick={() => onUpgrade({ key: planKey, label: plan.label, price: plan.price })}
           >
-            {planKey === "FREE" ? "Downgrade ke Free" : `Upgrade ke ${plan.label}`}
+            {planKey === "FREE" ? "Downgrade ke Gratis" : `Upgrade ke ${plan.label}`}
           </button>
         )}
       </div>
@@ -219,6 +230,7 @@ function PaymentModal({ plan, onClose }) {
     }, 3000);
 
     return () => clearInterval(pollRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
   useEffect(() => {
@@ -231,6 +243,9 @@ function PaymentModal({ plan, onClose }) {
         });
         const data = await res.json();
         setLoading(false);
+
+        if (!res.ok || !data.token) throw new Error(data.error || "Token pembayaran tidak tersedia");
+        if (!window.snap) throw new Error("Midtrans Snap belum dimuat");
 
         if (data.order_id) setOrderId(data.order_id);
 
@@ -247,30 +262,42 @@ function PaymentModal({ plan, onClose }) {
           },
           onClose: () => {},
         });
-      } catch {
+      } catch (err) {
+        console.error("Pembayaran gagal:", err);
         setLoading(false);
         onClose();
       }
     };
 
     startPayment();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [plan]);
 
   if (!loading) return null;
 
   return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)",
-      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
-    }}>
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.4)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 1000,
+      }}
+    >
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{
-          width: 18, height: 18,
-          border: "2px solid #fff",
-          borderTopColor: "transparent",
-          borderRadius: "50%",
-          animation: "spin 0.7s linear infinite",
-        }} />
+        <div
+          style={{
+            width: 18,
+            height: 18,
+            border: "2px solid #fff",
+            borderTopColor: "transparent",
+            borderRadius: "50%",
+            animation: "spin 0.7s linear infinite",
+          }}
+        />
         <span style={{ color: "#fff", fontSize: 14 }}>Menyiapkan pembayaran...</span>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -278,29 +305,46 @@ function PaymentModal({ plan, onClose }) {
   );
 }
 
-
 export default function PlanPage() {
-  useSession();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showPayment, setShowPayment] = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     fetch("/api/user/plan")
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); });
+      .then((r) => r.json().catch(() => ({})))
+      .then((d) => {
+        if (!cancelled) setData(d);
+      })
+      .catch(() => {
+        if (!cancelled) setData(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const usage = Array.isArray(data?.usage) ? data.usage : [];
 
   if (loading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "60vh" }}>
-        <div style={{
-          width: 22, height: 22,
-          border: "2px solid #059669",
-          borderTopColor: "transparent",
-          borderRadius: "50%",
-          animation: "spin 0.7s linear infinite",
-        }} />
+        <div
+          style={{
+            width: 22,
+            height: 22,
+            border: "2px solid #059669",
+            borderTopColor: "transparent",
+            borderRadius: "50%",
+            animation: "spin 0.7s linear infinite",
+          }}
+        />
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     );
@@ -354,22 +398,13 @@ export default function PlanPage() {
           </p>
           <div
             className="usage-grid"
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-              gap: 10,
-            }}
+            style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}
           >
-            {data?.usage?.map(({ feature, used, limit }) => (
+            {usage.map(({ feature, used, limit }) => (
               <div
                 key={feature}
                 className="usage-card"
-                style={{
-                  background: "#fff",
-                  border: "0.5px solid #f0f0f0",
-                  borderRadius: 14,
-                  padding: "12px 14px",
-                }}
+                style={{ background: "#fff", border: "0.5px solid #f0f0f0", borderRadius: 14, padding: "12px 14px" }}
               >
                 <p style={{ fontSize: 11, color: "#9ca3af", marginBottom: 4 }}>
                   {FEATURES_LABEL[feature] ?? feature}
@@ -390,7 +425,9 @@ export default function PlanPage() {
               Plan aktif hingga:{" "}
               <span style={{ color: "#6b7280", fontWeight: 500 }}>
                 {new Date(data.planExpiry).toLocaleDateString("id-ID", {
-                  day: "numeric", month: "long", year: "numeric",
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
                 })}
               </span>
             </p>
@@ -405,14 +442,14 @@ export default function PlanPage() {
             Pilih plan
           </p>
           <div className="plans-grid">
-            {Object.keys(PLANS).map(key => (
+            {Object.keys(PLANS).map((key) => (
               <PlanCard
                 key={key}
                 planKey={key}
                 plan={PLANS[key]}
                 isActive={(data?.plan ?? "FREE") === key}
                 isFeatured={key === "PRO"}
-                onUpgrade={selectedPlan => {
+                onUpgrade={(selectedPlan) => {
                   if (key === "FREE") alert("Konfirmasi downgrade?");
                   else setShowPayment(selectedPlan);
                 }}
@@ -421,9 +458,7 @@ export default function PlanPage() {
           </div>
         </section>
 
-        {showPayment && (
-          <PaymentModal plan={showPayment} onClose={() => setShowPayment(null)} />
-        )}
+        {showPayment && <PaymentModal plan={showPayment} onClose={() => setShowPayment(null)} />}
       </div>
     </>
   );
