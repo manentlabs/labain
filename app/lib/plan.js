@@ -29,6 +29,18 @@ export const PLANS = {
 /** @typedef {"caption" | "logo" | "photo" | "profile" | "finance" | "hpp"} ToolKey */
 
 /**
+ * Paket yang berlaku sekarang. Kedaluwarsa atau nilai tak dikenal dianggap FREE.
+ * Pakai fungsi ini di mana pun perlu mengecek paket user, supaya konsisten.
+ * @param {{ plan?: string | null, planExpiry?: Date | null } | null | undefined} user
+ * @returns {keyof typeof PLANS}
+ */
+export function getActivePlan(user) {
+  if (!user?.plan || !PLANS[user.plan]) return "FREE";
+  if (user.plan !== "FREE" && user.planExpiry && user.planExpiry < new Date()) return "FREE";
+  return user.plan;
+}
+
+/**
  * @param {keyof typeof PLANS} plan
  * @param {ToolKey} tool
  * @returns {number}
