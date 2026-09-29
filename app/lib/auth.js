@@ -1,9 +1,9 @@
-// app/lib/auth.js
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/app/lib/prisma";
 
+/** @type {import("next-auth").NextAuthOptions} */
 export const authOptions = {
   providers: [
     GoogleProvider({
@@ -52,12 +52,13 @@ export const authOptions = {
 
   callbacks: {
     async signIn({ user, account }) {
-      if (account.provider === "google") {
-        const existing = await prisma.user.findUnique({
+      if (account?.provider === "google") {
+        let existing = await prisma.user.findUnique({
           where: { email: user.email },
         });
+
         if (!existing) {
-          await prisma.user.create({
+          existing = await prisma.user.create({
             data: {
               name: user.name,
               email: user.email,
@@ -66,7 +67,9 @@ export const authOptions = {
             },
           });
         }
-        user.hasPassword = false; // Google tidak punya password
+
+        // Akun yang daftar dengan email/password lalu masuk lewat Google tetap punya password
+        user.hasPassword = existing.password !== "GOOGLE_LOGIN";
       }
       return true;
     },
@@ -87,7 +90,7 @@ export const authOptions = {
         });
         session.user.id = dbUser?.id;
         session.user.plan = dbUser?.plan;
-        session.user.hasPassword = token.hasPassword ?? false; // inject ke session
+        session.user.hasPassword = token.hasPassword ?? false;
       }
       return session;
     },
