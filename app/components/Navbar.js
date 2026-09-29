@@ -1,16 +1,13 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Fragment, Suspense, useCallback, useEffect, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 
-/* ---------------------------------------------------------
-   Ubah ke true saat halaman /assistant sudah siap.
-   Sesuaikan HISTORY_HREF dan DATA_HREF dengan route aslimu.
----------------------------------------------------------- */
-const ASSISTANT_ENABLED = false;
-const HISTORY_HREF = "/riwayat";
+const CHAT_HREF = "/home";
 const DATA_HREF = "/data-usaha";
+const CONVERSATIONS_ENDPOINT = "/api/conversations";
+const CHANGED_EVENT = "labain:conversations-changed"; // dikirim HomeChat saat riwayat berubah
 
 // ── Icons ──────────────────────────────────────────────────
 const svgProps = { width: 18, height: 18, viewBox: "0 0 20 20", fill: "none", "aria-hidden": true };
@@ -83,38 +80,129 @@ const Icon = {
 };
 
 // ── Data navigasi ──────────────────────────────────────────
-// authOnly: hanya tampil untuk pengguna yang sudah login.
-const home = { href: "/", label: "Home", short: "Home", Icon: Icon.Home };
-const assistant = { href: "/assistant", label: "Asisten", short: "Asisten", Icon: Icon.Assistant };
-const history = { href: HISTORY_HREF, label: "Riwayat", short: "Riwayat", Icon: Icon.History, authOnly: true };
-const data = { href: DATA_HREF, label: "Data Usaha", short: "Data", Icon: Icon.Data, authOnly: true };
-
-const allItems = [home, ...(ASSISTANT_ENABLED ? [assistant] : []), history, data];
+// Tamu hanya melihat Home. Pengguna login melihat Asisten dan Data Usaha; riwayat chat ada di bawahnya.
+const guestItems = [{ href: "/", label: "Home", short: "Home", Icon: Icon.Home }];
+const memberItems = [
+  { href: CHAT_HREF, label: "Asisten", short: "Asisten", Icon: Icon.Assistant },
+  { href: DATA_HREF, label: "Data Usaha", short: "Data", Icon: Icon.Data },
+];
 
 const PLAN_COLOR = { PRO: "#f59e0b", STARTER: "#059669" };
+const focusRing = "focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700";
+
+// ── Daftar riwayat percakapan ──────────────────────────────
+function useConversations(enabled) {
+  const [list, setList] = useState([]);
+
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(CONVERSATIONS_ENDPOINT);
+      if (!res.ok) return;
+      const d = await res.json();
+      setList(d.conversations ?? []);
+    } catch {
+      // Riwayat gagal dimuat: navigasi lain tetap berfungsi.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) {
+      setList([]);
+      return;
+    }
+    load();
+    window.addEventListener(CHANGED_EVENT, load);
+    return () => window.removeEventListener(CHANGED_EVENT, load);
+  }, [enabled, load]);
+
+  return { list, load };
+}
+
+// Dibungkus <Suspense> oleh pemakainya karena memakai useSearchParams.
+function HistoryList({ list, onChanged, onNavigate, hoverDelete }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeId = pathname === CHAT_HREF ? searchParams.get("c") : null;
+
+  async function remove(c) {
+    if (!window.confirm("Hapus percakapan ini? Catatan keuanganmu tetap tersimpan.")) return;
+    try {
+      const res = await fetch(`${CONVERSATIONS_ENDPOINT}/${c.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      if (c.id === activeId) router.push(CHAT_HREF);
+      onChanged();
+    } catch {
+      window.alert("Percakapan tidak bisa dihapus. Coba lagi.");
+    }
+  }
+
+  if (list.length === 0) {
+    return <p className="px-2 py-3 text-xs text-gray-500">Belum ada riwayat. Percakapanmu akan tersimpan di sini.</p>;
+  }
+
+  return (
+    <ul className="m-0 list-none space-y-0.5 p-0">
+      {list.map((c) => {
+        const current = c.id === activeId;
+        return (
+          <li key={c.id} className="group flex items-center">
+            <Link
+              href={`${CHAT_HREF}?c=${c.id}`}
+              onClick={onNavigate}
+              aria-current={current ? "page" : undefined}
+              title={c.title}
+              className={`min-w-0 flex-1 truncate rounded-lg px-3 py-2 text-[13px] transition-colors ${focusRing} ${
+                current ? "bg-emerald-50 font-semibold text-emerald-800" : "text-gray-700 hover:bg-gray-50"
+              }`}
+            >
+              {c.title}
+            </Link>
+            <button
+              type="button"
+              onClick={() => remove(c)}
+              aria-label={`Hapus percakapan ${c.title}`}
+              className={`ml-1 shrink-0 rounded px-2 py-1 text-gray-400 hover:text-red-600 ${focusRing} ${
+                hoverDelete ? "opacity-0 group-hover:opacity-100 focus-visible:opacity-100" : ""
+              }`}
+            >
+              ×
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 export default function Navbar() {
   const pathname = usePathname();
-  const [expanded, setExpanded] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false); // sheet akun (mobile)
+  const [historyOpen, setHistoryOpen] = useState(false); // sheet riwayat (mobile)
   const [userPlan, setUserPlan] = useState("FREE");
   const { data: session, status } = useSession();
 
-  // Saat sesi dimuat, tampilan tetap dirender supaya halaman tidak melompat.
   const loading = status === "loading";
   const user = session?.user;
   const email = user?.email;
   const initials = email ? email.slice(0, 2).toUpperCase() : "??";
 
-  // Item yang butuh login disembunyikan untuk tamu.
-  const items = allItems.filter((i) => !i.authOnly || loading || user);
+  // Sidebar tetap terbuka selama menu akun terbuka, meski kursor keluar.
+  const expanded = hovered || menuOpen;
+  const anySheet = sheetOpen || historyOpen;
+
+  // Saat sesi dimuat, menu member tetap dirender supaya tampilan tidak melompat.
+  const items = loading || user ? memberItems : guestItems;
+  const homeHref = user ? CHAT_HREF : "/";
+  const { list: conversations, load: reloadConversations } = useConversations(!!email);
 
   const isActive = (href) =>
     href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
   const accountActive = isActive("/update_profile") || isActive("/plan");
 
-  // Tutup menu saat klik di luar
+  // Tutup menu saat klik di luar sidebar
   useEffect(() => {
     if (!menuOpen) return;
     const handler = (e) => {
@@ -126,30 +214,32 @@ export default function Navbar() {
 
   // Tutup menu dan sheet dengan Escape
   useEffect(() => {
-    if (!menuOpen && !sheetOpen) return;
+    if (!menuOpen && !anySheet) return;
     const handler = (e) => {
       if (e.key === "Escape") {
         setMenuOpen(false);
         setSheetOpen(false);
+        setHistoryOpen(false);
       }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [menuOpen, sheetOpen]);
+  }, [menuOpen, anySheet]);
 
   // Kunci scroll halaman saat sheet terbuka
   useEffect(() => {
-    if (!sheetOpen) return;
+    if (!anySheet) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [sheetOpen]);
+  }, [anySheet]);
 
   // Tutup menu dan sheet setelah pindah halaman
   useEffect(() => {
     setSheetOpen(false);
+    setHistoryOpen(false);
     setMenuOpen(false);
   }, [pathname]);
 
@@ -175,11 +265,32 @@ export default function Navbar() {
     <span style={{ color: PLAN_COLOR[userPlan] ?? "#6b7280", fontWeight: 500 }}>{userPlan}</span>
   );
 
+  const historyButton = user ? (
+    <button
+      type="button"
+      onClick={() => {
+        setSheetOpen(false);
+        setHistoryOpen((v) => !v);
+      }}
+      aria-expanded={historyOpen}
+      aria-haspopup="dialog"
+      className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors"
+      style={historyOpen ? { background: "#ecfdf5" } : {}}
+    >
+      <Icon.History active={historyOpen} />
+      <span className="text-[10px] font-medium" style={{ color: historyOpen ? "#059669" : "#6b7280" }}>
+        Riwayat
+      </span>
+    </button>
+  ) : (
+    <span aria-hidden="true" className="w-10 h-10 rounded-lg bg-gray-100" />
+  );
+
   return (
     <>
       {/* ═════════════ MOBILE (< md) ═════════════ */}
       <header className="md:hidden fixed top-0 inset-x-0 z-50 h-12 bg-white border-b border-gray-100 flex items-center justify-between px-4">
-        <Link href="/" className="flex items-center gap-2" aria-label="Labain, ke beranda">
+        <Link href={homeHref} className="flex items-center gap-2" aria-label="Labain, ke beranda">
           <img src="/labain.png" alt="" className="w-7 h-7 object-contain" />
           <span className="text-base font-bold text-gray-800">
             Lab<span className="text-emerald-600">AI</span>n
@@ -199,6 +310,55 @@ export default function Navbar() {
       </header>
 
       <div className="md:hidden h-12" />
+
+      {/* Sheet riwayat (mobile, khusus pengguna login) */}
+      {historyOpen && user && (
+        <div className="md:hidden fixed inset-0 z-[60]">
+          <button
+            type="button"
+            aria-label="Tutup riwayat"
+            onClick={() => setHistoryOpen(false)}
+            className="absolute inset-0 bg-black/30 cursor-default"
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Riwayat percakapan"
+            className="absolute bottom-0 inset-x-0 bg-white rounded-t-2xl px-4 pt-4 flex flex-col max-h-[75dvh]"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom), 1rem)" }}
+          >
+            <div className="flex items-center justify-between mb-3 flex-shrink-0">
+              <p className="text-[13px] font-semibold text-gray-800">Riwayat percakapan</p>
+              <button
+                type="button"
+                onClick={() => setHistoryOpen(false)}
+                aria-label="Tutup"
+                className="w-8 h-8 grid place-items-center rounded-full text-gray-500 hover:bg-gray-100"
+              >
+                <Icon.Close />
+              </button>
+            </div>
+
+            <Link
+              href={CHAT_HREF}
+              onClick={() => setHistoryOpen(false)}
+              className="mb-3 flex-shrink-0 rounded-xl bg-emerald-600 px-4 py-2.5 text-center text-[13px] font-semibold text-white hover:bg-emerald-700"
+            >
+              Percakapan baru
+            </Link>
+
+            <div className="flex-1 overflow-y-auto min-h-0">
+              <Suspense fallback={null}>
+                <HistoryList
+                  list={conversations}
+                  onChanged={reloadConversations}
+                  onNavigate={() => setHistoryOpen(false)}
+                />
+              </Suspense>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Sheet akun (mobile, khusus pengguna login) */}
       {sheetOpen && user && (
@@ -264,7 +424,11 @@ export default function Navbar() {
         style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
       >
         {items.map((item) => (
-          <MobileItem key={item.href} item={item} active={isActive(item.href)} />
+          <Fragment key={item.href}>
+            <MobileItem item={item} active={isActive(item.href)} />
+            {/* Riwayat muncul tepat setelah Asisten */}
+            {item.href === CHAT_HREF && historyButton}
+          </Fragment>
         ))}
 
         {loading ? (
@@ -272,7 +436,10 @@ export default function Navbar() {
         ) : user ? (
           <button
             type="button"
-            onClick={() => setSheetOpen((v) => !v)}
+            onClick={() => {
+              setHistoryOpen(false);
+              setSheetOpen((v) => !v);
+            }}
             aria-expanded={sheetOpen}
             aria-haspopup="dialog"
             className="flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-colors"
@@ -290,23 +457,18 @@ export default function Navbar() {
 
       {/* ═════════════ DESKTOP (≥ md) ═════════════ */}
       <aside
-        onMouseEnter={() => setExpanded(true)}
-        onMouseLeave={() => {
-          setExpanded(false);
-          setMenuOpen(false);
-        }}
-        onFocus={() => setExpanded(true)}
+        data-user-menu
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setHovered(true)}
         onBlur={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget)) {
-            setExpanded(false);
-            setMenuOpen(false);
-          }
+          if (!e.currentTarget.contains(e.relatedTarget)) setHovered(false);
         }}
         className="hidden md:flex fixed top-0 left-0 h-screen bg-white border-r border-gray-100 flex-col z-50 overflow-hidden transition-[width] duration-200 ease-in-out motion-reduce:transition-none"
         style={{ width: expanded ? 220 : 64 }}
       >
         {/* Logo */}
-        <Link href="/" className="flex items-center gap-3 px-4 py-[18px] border-b border-gray-100 flex-shrink-0" aria-label="Labain, ke beranda">
+        <Link href={homeHref} className="flex items-center gap-3 px-4 py-[18px] border-b border-gray-100 flex-shrink-0" aria-label="Labain, ke beranda">
           <div className="w-8 h-8 flex-shrink-0">
             <img src="/labain.png" alt="" className="w-full h-full object-cover rounded-lg" />
           </div>
@@ -318,14 +480,33 @@ export default function Navbar() {
         </Link>
 
         {/* Nav */}
-        <nav aria-label="Navigasi utama" className="flex-1 p-2 flex flex-col gap-0.5 overflow-y-auto overflow-x-hidden">
+        <nav aria-label="Navigasi utama" className="p-2 flex flex-col gap-0.5 flex-shrink-0">
           {items.map((item) => (
             <DesktopItem key={item.href} item={item} active={isActive(item.href)} expanded={expanded} />
           ))}
         </nav>
 
+        {/* Riwayat percakapan (tampil saat sidebar terbuka) */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          {user && expanded && (
+            <>
+              <div className="flex items-center justify-between px-4 pt-3 pb-1 border-t border-gray-100 flex-shrink-0">
+                <span className="text-[11px] font-semibold text-gray-500">Riwayat</span>
+                <Link href={CHAT_HREF} className={`rounded text-[11px] font-medium text-emerald-700 hover:text-emerald-800 ${focusRing}`}>
+                  + Baru
+                </Link>
+              </div>
+              <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 pb-2">
+                <Suspense fallback={null}>
+                  <HistoryList list={conversations} onChanged={reloadConversations} hoverDelete />
+                </Suspense>
+              </div>
+            </>
+          )}
+        </div>
+
         {/* User section */}
-        <div className="p-2 border-t border-gray-100 flex-shrink-0" data-user-menu>
+        <div className="p-2 border-t border-gray-100 flex-shrink-0">
           {loading ? (
             <div className="px-2 py-1.5">
               <span aria-hidden="true" className="block w-8 h-8 rounded-full bg-gray-100" />

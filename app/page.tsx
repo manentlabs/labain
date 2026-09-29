@@ -1,3 +1,6 @@
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/lib/auth"; // sesuaikan dengan lokasi authOptions-mu
 import { prisma } from "@/app/lib/prisma";
 import HomeClient from "@/app/components/HomeClient";
 
@@ -27,13 +30,15 @@ async function getStats() {
 
     // Hitung total menit dihemat berdasarkan fitur yang dipakai
     const totalMinutesSaved = usageByFeature.reduce(
-    (acc: number, row: any) => {
-      const featureName = row.feature.toLowerCase();
-      const minutesPerUse =
-        MINUTES_SAVED_PER_FEATURE[featureName] ??
-        MINUTES_SAVED_PER_FEATURE.default;
-      return acc + (row._sum.count ?? 0) * minutesPerUse;
-    }, 0);
+      (acc: number, row: any) => {
+        const featureName = row.feature.toLowerCase();
+        const minutesPerUse =
+          MINUTES_SAVED_PER_FEATURE[featureName] ??
+          MINUTES_SAVED_PER_FEATURE.default;
+        return acc + (row._sum.count ?? 0) * minutesPerUse;
+      },
+      0
+    );
 
     // Konversi ke jam, bulatkan ke bawah
     const totalHoursSaved = Math.floor(totalMinutesSaved / 60);
@@ -50,14 +55,18 @@ async function getStats() {
   }
 }
 
-// Format angka: 12400 → "12.4K", 98000 → "98K+"
+// Format angka: 12400 → "12.4K", 98000 → "98K"
 function formatNumber(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
   return n.toLocaleString("id-ID");
 }
 
 export default async function Home() {
+  // Pengguna yang sudah login langsung diarahkan ke chat.
+  const session = await getServerSession(authOptions);
+  if (session) redirect("/home");
+
   const { totalUsers, totalContent, totalUmkm, totalHoursSaved } = await getStats();
 
   const stats = [

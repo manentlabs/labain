@@ -81,7 +81,8 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/");
+    router.push("/home");
+    router.refresh(); 
   };
 
   const handleResend = async () => {
@@ -227,7 +228,7 @@ export default function LoginPage() {
         </div>
 
         <button
-          onClick={() => signIn("google", { callbackUrl: "/" })}
+          onClick={() => signIn("google", { callbackUrl: "/home" })}
           className="w-full flex items-center justify-center gap-2 border border-gray-200 hover:bg-gray-50 text-gray-700 py-2.5 rounded-xl text-sm font-medium transition mb-4"
         >
           <svg width="18" height="18" viewBox="0 0 24 24">

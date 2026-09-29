@@ -12,7 +12,7 @@ model User {
   name          String?
   email         String   @unique
   password      String?
-  
+
   plan          String   @default("FREE")
   planExpiry    DateTime?
 
@@ -25,6 +25,9 @@ model User {
   usages        Usage[]
   transactions  Transaction[]
   verifications EmailVerification?
+  business      Business?
+  conversations Conversation[]
+  financeEntries FinanceEntry[]
 }
 
 model EmailVerification {
@@ -52,6 +55,7 @@ model Usage {
   @@index([userId, date])
 }
 
+/// Pembayaran paket berlangganan.
 model Transaction {
   id        String   @id @default(cuid())
   order_id  String   @unique
@@ -64,4 +68,84 @@ model Transaction {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+/// Profil usaha milik pengguna (satu pengguna, satu usaha).
+model Business {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  name           String                 // nama usaha
+  category       String?                // jenis usaha, misal "Makanan ringan"
+  description    String?  @db.Text      // cerita atau filosofi usaha
+  products       String?  @db.Text      // produk utama
+  targetCustomer String?                // target pembeli
+  location       String?                // kota atau daerah
+  channels       String?                // tempat jualan, misal "Instagram, Shopee"
+  tone           String?                // gaya bahasa promosi yang disukai
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Satu percakapan di chat (satu entri di daftar riwayat).
+model Conversation {
+  id        String    @id @default(cuid())
+  userId    String
+  title     String    @default("Percakapan baru")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages       Message[]
+  financeEntries FinanceEntry[]
+
+  @@index([userId, updatedAt])
+}
+
+enum MessageRole {
+  user
+  assistant
+}
+
+/// Satu pesan di dalam percakapan.
+model Message {
+  id             String      @id @default(cuid())
+  conversationId String
+  role           MessageRole
+  content        String      @db.Text
+  images         Json?       // gambar hasil asisten: [{ url, label }]
+  hasAttachment  Boolean     @default(false) // pengguna melampirkan foto (fotonya tidak disimpan)
+  createdAt      DateTime    @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+}
+
+enum FinanceType {
+  INCOME  // penjualan / pemasukan
+  EXPENSE // biaya / pengeluaran
+}
+
+/// Catatan keuangan usaha (penjualan dan biaya). Beda dengan Transaction, yang khusus pembayaran paket.
+model FinanceEntry {
+  id             String      @id @default(cuid())
+  userId         String
+  conversationId String?     // percakapan asal catatan ini (kalau dicatat lewat chat)
+  type           FinanceType
+  amount         Int         // total dalam Rupiah (quantity x unitPrice bila keduanya ada)
+  description    String                 // misal "Penjualan keripik pisang" atau "Belanja bahan"
+  category       String?                // misal "Penjualan", "Bahan baku", "Gaji", "Ongkir"
+  quantity       Int?                   // jumlah barang terjual atau dibeli
+  unitPrice      Int?                   // harga satuan dalam Rupiah
+  entryDate      DateTime    @db.Date   // tanggal kejadian (tanpa jam, bebas geseran zona waktu)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([userId, entryDate])
+  @@index([userId, type, entryDate])
 }
