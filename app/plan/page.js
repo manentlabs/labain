@@ -379,7 +379,7 @@ export default function PlanPage() {
 
       <div
         className="plan-wrapper"
-        style={{ maxWidth: 720, margin: "0 auto", padding: "2rem 1.25rem", fontFamily: "'DM Sans','Segoe UI',sans-serif" }}
+        style={{ maxWidth: 1024, margin: "0 auto", padding: "2rem 1.5rem", fontFamily: "'DM Sans','Segoe UI',sans-serif" }}
       >
         <h1 className="plan-title" style={{ fontSize: 18, fontWeight: 500, color: "#111827", marginBottom: 4 }}>
           Plan &amp; Penggunaan

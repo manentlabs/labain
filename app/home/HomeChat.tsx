@@ -19,6 +19,10 @@ const MAX_LENGTH = 1000;
 const MAX_IMAGE_SIDE = 1280;
 const DEFAULT_PHOTO_PROMPT = "Buatkan foto produk yang menarik dari foto ini.";
 
+// Lebar konten (daftar pesan dan kotak input) harus sama supaya sejajar.
+// Sama dengan lebar kartu di halaman awal. Ganti ke max-w-4xl jika ingin lebih sempit.
+const CONTENT_WIDTH = "max-w-5xl";
+
 type OutImage = { url: string; label: string };
 type Msg = {
   role: "user" | "assistant";
@@ -289,7 +293,7 @@ function Chat({ userName }: { userName?: string }) {
     >
       {/* ---------- Daftar pesan ---------- */}
       <div className="flex-1 overflow-y-auto">
-        <div className={`mx-auto px-4 py-6 md:px-6 ${isEmpty && !opening ? "max-w-5xl" : "max-w-3xl"}`}>
+        <div className={`mx-auto w-full px-4 py-6 md:px-6 ${CONTENT_WIDTH}`}>
           {opening ? (
             <p className="pt-16 text-center text-sm text-gray-500">Membuka percakapan…</p>
           ) : isEmpty ? (
@@ -430,7 +434,7 @@ function Chat({ userName }: { userName?: string }) {
 
       {/* ---------- Kotak input ---------- */}
       <div className="shrink-0 border-t border-gray-100 bg-gray-50">
-        <div className="mx-auto max-w-3xl px-4 py-3 md:px-6">
+        <div className={`mx-auto w-full px-4 py-3 md:px-6 ${CONTENT_WIDTH}`}>
           {error && (
             <p role="alert" className="mb-2 text-xs text-red-600">
               {error}
