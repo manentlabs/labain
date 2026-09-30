@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import type { CellValue } from "exceljs"; // hanya tipe, tidak ikut ke bundle
 
 /* ---------------------------------------------------------
    KONFIGURASI
@@ -175,7 +176,7 @@ async function exportExcel(rows: FinanceEntry[], month: string, businessName: st
   const t1 = last + 2;
   const t2 = last + 3;
   const t3 = last + 4;
-  const totals: [number, string, ExcelJS.CellValue][] = [
+  const totals: [number, string, CellValue][] = [
     [t1, "Total pemasukan", { formula: `SUMIF(B${first}:B${last},"Pemasukan",G${first}:G${last})`, result: income }],
     [t2, "Total pengeluaran", { formula: `SUMIF(B${first}:B${last},"Pengeluaran",G${first}:G${last})`, result: expense }],
     [t3, "Laba", { formula: `G${t1}-G${t2}`, result: income - expense }],
