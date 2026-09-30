@@ -77,6 +77,58 @@ const monthLabel = (key: string) => {
 const dayLabel = (iso: string) =>
   new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso));
 
+/* ---------------- Unduh CSV ---------------- */
+
+// Bungkus sel dengan tanda kutip. Sel yang diawali = + - @ diberi awalan ' supaya
+// tidak dijalankan sebagai rumus di Excel (isi deskripsi berasal dari chat pengguna).
+function csvCell(value: string | number | null | undefined) {
+  let s = value == null ? "" : String(value);
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+// Pemisah titik koma dan BOM UTF-8 supaya langsung rapi saat dibuka di Excel versi Indonesia.
+function buildCsv(rows: FinanceEntry[], income: number, expense: number) {
+  const SEP = ";";
+  const header = ["Tanggal", "Jenis", "Deskripsi", "Kategori", "Jumlah", "Harga satuan (Rp)", "Total (Rp)"];
+  const lines = [header.map(csvCell).join(SEP)];
+
+  for (const e of rows) {
+    lines.push(
+      [
+        e.entryDate.slice(0, 10),
+        e.type === "INCOME" ? "Pemasukan" : "Pengeluaran",
+        e.description,
+        e.category ?? "",
+        e.quantity ?? "",
+        e.unitPrice ?? "",
+        e.amount,
+      ]
+        .map(csvCell)
+        .join(SEP)
+    );
+  }
+
+  lines.push("");
+  lines.push(["", "", "", "", "", "Total pemasukan", income].map(csvCell).join(SEP));
+  lines.push(["", "", "", "", "", "Total pengeluaran", expense].map(csvCell).join(SEP));
+  lines.push(["", "", "", "", "", "Laba", income - expense].map(csvCell).join(SEP));
+
+  return "\uFEFF" + lines.join("\r\n");
+}
+
+function downloadFile(filename: string, content: string, mime: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 // Kotak ikon berwarna, sama dengan kartu di landing page.
 function IconBox({ accent, bg, path }: { accent: string; bg: string; path: string }) {
   return (
@@ -95,6 +147,7 @@ const ICON = {
   list: "M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01",
   business:
     "M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16",
+  download: "M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3",
 };
 
 export default function DataUsaha() {
@@ -162,6 +215,13 @@ export default function DataUsaha() {
   const income = monthEntries.filter((e) => e.type === "INCOME").reduce((s, e) => s + e.amount, 0);
   const expense = monthEntries.filter((e) => e.type === "EXPENSE").reduce((s, e) => s + e.amount, 0);
   const profit = income - expense;
+
+  function exportCsv() {
+    if (monthEntries.length === 0) return;
+    // Urut dari tanggal terlama supaya enak dibaca sebagai pembukuan.
+    const rows = [...monthEntries].sort((a, b) => a.entryDate.localeCompare(b.entryDate));
+    downloadFile(`catatan-keuangan-${month}.csv`, buildCsv(rows, income, expense), "text/csv;charset=utf-8");
+  }
 
   async function removeEntry(e: FinanceEntry) {
     if (!window.confirm("Hapus catatan ini?")) return;
@@ -260,14 +320,25 @@ export default function DataUsaha() {
         <div className="grid gap-6 lg:grid-cols-5">
           {/* ================= CATATAN ================= */}
           <section aria-labelledby="catatan" className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm lg:col-span-3">
-            <div className="flex items-start gap-3 p-5">
+            <div className="flex flex-wrap items-start gap-3 p-5">
               <IconBox accent="#0369a1" bg="#f0f9ff" path={ICON.list} />
-              <div>
+              <div className="min-w-0 flex-1">
                 <h2 id="catatan" className="text-base font-bold text-gray-900">
                   Catatan bulan ini
                 </h2>
                 <p className="mt-1 text-sm text-gray-600">Dicatat otomatis dari percakapanmu dengan Labain.</p>
               </div>
+              <button
+                type="button"
+                onClick={exportCsv}
+                disabled={entriesLoading || monthEntries.length === 0}
+                className={`inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 text-sm font-medium text-gray-800 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white ${focusRing}`}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d={ICON.download} />
+                </svg>
+                Unduh CSV
+              </button>
             </div>
 
             {entriesError && (
