@@ -3,7 +3,7 @@ import { authOptions } from "@/app/lib/auth";
 import { reserveUsage, refundUsage } from "@/app/lib/usage";
 import { prisma } from "@/app/lib/prisma";
 import { resolveUserId } from "@/app/lib/getUserId";
-import OpenAI from "openai";
+import OpenAI, { toFile } from "openai";
 
 export const maxDuration = 60; // pembuatan gambar bisa memakan 20-40 detik
 
@@ -15,6 +15,8 @@ export const maxDuration = 60; // pembuatan gambar bisa memakan 20-40 detik
    - MAX_TOOL_CALLS  : jumlah tool yang dijalankan per pesan.
    - MAX_ENTRIES     : jumlah catatan keuangan per pemanggilan record_finance.
    - MAX_AMOUNT      : batas nilai Int di MySQL (sekitar 2,1 miliar).
+   - LOGO_QUALITY    : kualitas gambar logo ("medium" atau "high"). High lebih detail tapi lebih mahal.
+   - PHOTO_QUALITY   : kualitas foto produk.
 ---------------------------------------------------------- */
 const MAX_HISTORY = 20;
 const MAX_LENGTH = 1000;
@@ -22,6 +24,8 @@ const MAX_IMAGE_CHARS = 6_000_000;
 const MAX_TOOL_CALLS = 4;
 const MAX_ENTRIES = 20;
 const MAX_AMOUNT = 2_000_000_000;
+const LOGO_QUALITY = "high";
+const PHOTO_QUALITY = "medium";
 const DEFAULT_PHOTO_PROMPT = "Buatkan foto produk yang menarik dari foto ini.";
 
 const SYSTEM_PROMPT = `Kamu adalah Labain, asisten AI untuk pelaku UMKM Indonesia. Semua kebutuhan pengguna dikerjakan langsung di percakapan ini. Jangan pernah menyuruh pengguna pindah halaman atau membuka fitur lain.
@@ -53,9 +57,18 @@ Aturan profil usaha:
 - Pakai profil yang tersimpan sebagai konteks supaya caption dan hitungan sesuai usahanya, tanpa menanyakan ulang hal yang sudah ada.
 
 Aturan logo:
-- Kalau nama usaha dan jenis usaha sudah jelas (dari pesan atau profil usaha), langsung buat. Kalau belum, tanyakan itu dulu.
-- prompt_image harus dalam bahasa Inggris, dimulai dengan "Flat vector logo of", berisi SATU bentuk utama yang sederhana, warna spesifik (misal navy blue, forest green), maksimal 150 karakter. Jangan sebut nama brand atau nama orang, jangan pakai kata realistic, photo, 3D, shadow, gradient.
-- Setelah gambar jadi, jelaskan singkat konsep, warna, dan alasan desainnya, serta rekomendasi jenis huruf.
+- Syarat membuat: nama usaha dan jenis usaha sudah jelas (dari pesan atau profil usaha). Kalau belum, tanyakan itu saja. Kalau sudah, langsung buat. Jangan menanyakan gaya atau warna, pilih sendiri yang paling cocok kecuali pengguna sudah menyebutkannya.
+- Susun konsep dulu sebelum menulis prompt_image:
+  a. SIMBOL: satu objek utama yang paling mewakili produk atau inti usaha (misal keripik pisang -> daun pisang dan pisang yang disederhanakan). Jangan menggabungkan banyak objek. Boleh memadukan dua unsur kalau menyatu jadi satu bentuk (misal huruf awal yang membentuk simbol).
+  b. GAYA: pilih satu sesuai usaha dan target pembeli. Kuliner rumahan: hangat dan ramah (bentuk membulat, maskot sederhana). Fashion atau kecantikan: elegan dan minimalis (garis tipis, monogram). Jasa atau teknologi: modern dan tegas (geometris). Produk tradisional atau kerajinan: motif nusantara yang disederhanakan (batik, wayang, ukiran). Anak dan kreatif: ceria dan playful.
+  c. WARNA: maksimal 2 warna solid, satu dominan. Sebut nama warna spesifik (misal deep navy blue, warm orange, forest green), bukan hanya "biru". Makanan: hangat (oranye, merah, kuning, cokelat). Kesehatan dan alami: hijau. Terpercaya dan profesional: biru atau navy. Mewah: hitam, emas, atau maroon.
+  d. TEKS: secara default logo TANPA teks, karena gambar AI sering salah eja. Kalau pengguna minta nama usaha ada di logo, tulis persis di prompt_image dalam tanda kutip, maksimal 3 kata, lalu minta pengguna memeriksa ejaannya.
+- prompt_image harus dalam bahasa Inggris, maksimal 250 karakter, dengan pola:
+  "Flat vector logo of [satu simbol], [gaya], [warna spesifik], [teks: 'NAMA' atau no text]"
+  Contoh: "Flat vector logo of a simplified banana leaf wrapped around a banana chip, warm friendly rounded style, golden yellow and forest green, no text"
+- Jangan sebut nama brand terkenal atau nama orang. Jangan pakai kata realistic, photo, 3D, shadow, gradient.
+- Kalau pengguna meminta revisi (warna, bentuk, gaya), ubah hanya bagian yang diminta dan pertahankan konsep lainnya.
+- Setelah gambar jadi, jelaskan dalam 3-4 kalimat: (1) arti simbol, (2) alasan warna, (3) rekomendasi jenis huruf yang cocok untuk menulis nama usaha di samping logo, (4) tawarkan satu variasi (warna lain atau gaya lain).
 
 Aturan foto produk:
 - Tool ini hanya bisa dipakai kalau pengguna sudah melampirkan foto di pesan ini (kamu bisa melihatnya). Kalau belum ada foto, minta pengguna melampirkannya dengan tombol lampiran di kotak chat.
@@ -70,13 +83,14 @@ const tools = [
     type: "function",
     function: {
       name: "create_logo",
-      description: "Membuat satu gambar logo untuk usaha pengguna.",
+      description: "Membuat satu gambar logo untuk usaha pengguna. Panggil hanya setelah nama dan jenis usaha jelas.",
       parameters: {
         type: "object",
         properties: {
           prompt_image: {
             type: "string",
-            description: "Prompt gambar berbahasa Inggris, dimulai dengan 'Flat vector logo of'.",
+            description:
+              "Bahasa Inggris, maks 250 karakter. Pola: 'Flat vector logo of [satu simbol utama], [gaya], [1-2 warna spesifik], [no text atau teks persis dalam tanda kutip]'.",
           },
         },
         required: ["prompt_image"],
@@ -214,20 +228,10 @@ function buildSystemPrompt(business, today) {
 
 /* ---------------- Gambar ---------------- */
 
-// Buat gambar, simpan ke tabel Image di database, kembalikan URL-nya.
+// Simpan hasil gambar (base64) ke tabel Image, kembalikan URL-nya.
 // Gambar disajikan oleh app/api/images/[file]/route.js
-async function generateImage(openai, prompt, userId) {
-  const result = await openai.images.generate({
-    model: "gpt-image-1",
-    prompt: prompt.slice(0, 900).trimEnd(),
-    size: "1024x1024",
-    quality: "medium",
-    n: 1,
-  });
-
-  const b64 = result.data?.[0]?.b64_json;
+async function saveImage(b64, userId) {
   if (!b64) throw new Error("Tidak ada data gambar");
-
   const img = await prisma.image.create({
     data: { userId, data: Buffer.from(b64, "base64") },
     select: { id: true },
@@ -235,10 +239,44 @@ async function generateImage(openai, prompt, userId) {
   return `/api/images/${img.id}`;
 }
 
+// Buat gambar dari teks saja (dipakai untuk logo).
+async function generateImage(openai, prompt, userId, quality = "medium") {
+  const result = await openai.images.generate({
+    model: "gpt-image-1",
+    prompt: prompt.slice(0, 1200).trimEnd(),
+    size: "1024x1024",
+    quality,
+    n: 1,
+  });
+  return saveImage(result.data?.[0]?.b64_json, userId);
+}
+
+// Ubah foto lampiran menjadi foto produk baru. Foto asli ikut dikirim ke model gambar,
+// jadi bentuk, warna, dan label produk tetap setia ke aslinya.
+async function editImage(openai, prompt, userId, dataUrl, quality = "medium") {
+  const m = /^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(dataUrl || "");
+  if (!m) {
+    throw Object.assign(new Error("Format foto tidak didukung"), { unsupportedFormat: true });
+  }
+  const mime = m[1];
+  const ext = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
+  const file = await toFile(Buffer.from(m[2], "base64"), `product.${ext}`, { type: mime });
+
+  const result = await openai.images.edit({
+    model: "gpt-image-1",
+    image: file,
+    prompt: prompt.slice(0, 1500).trimEnd(),
+    size: "1024x1024",
+    quality,
+    n: 1,
+  });
+  return saveImage(result.data?.[0]?.b64_json, userId);
+}
+
 /* ---------------- Tool ---------------- */
 
 async function runToolInner(ctx, name, args) {
-  const { openai, userId, conversationId, hasImage, today } = ctx;
+  const { openai, userId, conversationId, image, today } = ctx;
 
   try {
     switch (name) {
@@ -246,9 +284,11 @@ async function runToolInner(ctx, name, args) {
         const prompt = clip(args.prompt_image, 600);
         if (!prompt) return { result: "Gagal: prompt gambar kosong." };
         const full =
-          `${prompt}, isolated on pure white background, flat vector, ` +
-          "no gradients, no shadows, no 3D effects, professional branding";
-        const url = await generateImage(openai, full, userId);
+          `${prompt}. Clean flat vector logo design, solid colors only, bold simple shapes with a clear silhouette, ` +
+          "balanced composition centered on a square canvas with generous empty margin, " +
+          "still readable at small sizes like a profile picture, " +
+          "isolated on a plain pure white background, no gradients, no shadows, no 3D effects, professional brand identity";
+        const url = await generateImage(openai, full, userId, LOGO_QUALITY);
         return {
           result: "Berhasil. Logo sudah dibuat dan ditampilkan ke pengguna.",
           image: { url, label: "Logo" },
@@ -258,16 +298,18 @@ async function runToolInner(ctx, name, args) {
       case "create_product_photo": {
         const prompt = clip(args.prompt_image, 800);
         if (!prompt) return { result: "Gagal: prompt gambar kosong." };
-        if (!hasImage) {
+        if (!image) {
           return {
             result:
               "Gagal: pengguna belum melampirkan foto produk di pesan ini. Minta pengguna melampirkan foto lewat tombol lampiran di kotak chat.",
           };
         }
         const full =
-          `${prompt}, ultra sharp, product in perfect focus, photorealistic, ` +
-          "no text overlays, no watermarks, shot on professional camera, commercial advertising quality";
-        const url = await generateImage(openai, full, userId);
+          `${prompt}. Keep the product from the input photo exactly the same: identical shape, exact colors, ` +
+          "materials, label design and any printed text. Change only the background, lighting and setting. " +
+          "Ultra sharp, product in perfect focus, photorealistic, no extra text overlays, no watermarks, " +
+          "shot on professional camera, commercial advertising quality";
+        const url = await editImage(openai, full, userId, image, PHOTO_QUALITY);
         return {
           result: "Berhasil. Foto produk sudah dibuat dan ditampilkan ke pengguna.",
           image: { url, label: "Foto produk" },
@@ -385,6 +427,11 @@ async function runToolInner(ctx, name, args) {
     }
   } catch (err) {
     console.error(`Tool ${name} error:`, err?.message);
+    if (err?.unsupportedFormat) {
+      return {
+        result: "Gagal: format foto tidak didukung. Minta pengguna melampirkan foto berformat JPG, PNG, atau WebP.",
+      };
+    }
     const msg = String(err?.message ?? "");
     if (msg.includes("content_policy") || msg.includes("safety") || msg.includes("rejected")) {
       return {
@@ -536,7 +583,7 @@ export async function POST(req) {
 
     if (msg?.tool_calls?.length) {
       convo.push(msg);
-      const ctx = { openai, userId, conversationId, hasImage: Boolean(image), today };
+      const ctx = { openai, userId, conversationId, image, today };
 
       // Dijalankan berurutan, jadi get_profit selalu melihat hasil record_finance sebelumnya.
       for (const [i, call] of msg.tool_calls.entries()) {
