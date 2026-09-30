@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from "react";
    Endpoint ini dilayani oleh route di app/api/finance dan app/api/business.
    - FINANCE_ENDPOINT  GET ?month=YYYY-MM -> { entries }, DELETE /:id
    - BUSINESS_ENDPOINT GET -> { business | null }, PUT -> { business }
+   Unduhan Excel memakai paket "exceljs": npm i exceljs
 ---------------------------------------------------------- */
 const FINANCE_ENDPOINT = "/api/finance";
 const BUSINESS_ENDPOINT = "/api/business";
@@ -77,48 +78,13 @@ const monthLabel = (key: string) => {
 const dayLabel = (iso: string) =>
   new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(iso));
 
-/* ---------------- Unduh CSV ---------------- */
+/* ---------------- Unduh Excel ---------------- */
 
-// Bungkus sel dengan tanda kutip. Sel yang diawali = + - @ diberi awalan ' supaya
-// tidak dijalankan sebagai rumus di Excel (isi deskripsi berasal dari chat pengguna).
-function csvCell(value: string | number | null | undefined) {
-  let s = value == null ? "" : String(value);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return `"${s.replace(/"/g, '""')}"`;
-}
+const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const RP_FORMAT = '"Rp"#,##0;[Red]-"Rp"#,##0';
 
-// Pemisah titik koma dan BOM UTF-8 supaya langsung rapi saat dibuka di Excel versi Indonesia.
-function buildCsv(rows: FinanceEntry[], income: number, expense: number) {
-  const SEP = ";";
-  const header = ["Tanggal", "Jenis", "Deskripsi", "Kategori", "Jumlah", "Harga satuan (Rp)", "Total (Rp)"];
-  const lines = [header.map(csvCell).join(SEP)];
-
-  for (const e of rows) {
-    lines.push(
-      [
-        e.entryDate.slice(0, 10),
-        e.type === "INCOME" ? "Pemasukan" : "Pengeluaran",
-        e.description,
-        e.category ?? "",
-        e.quantity ?? "",
-        e.unitPrice ?? "",
-        e.amount,
-      ]
-        .map(csvCell)
-        .join(SEP)
-    );
-  }
-
-  lines.push("");
-  lines.push(["", "", "", "", "", "Total pemasukan", income].map(csvCell).join(SEP));
-  lines.push(["", "", "", "", "", "Total pengeluaran", expense].map(csvCell).join(SEP));
-  lines.push(["", "", "", "", "", "Laba", income - expense].map(csvCell).join(SEP));
-
-  return "\uFEFF" + lines.join("\r\n");
-}
-
-function downloadFile(filename: string, content: string, mime: string) {
-  const blob = new Blob([content], { type: mime });
+function saveBlob(filename: string, data: BlobPart, mime: string) {
+  const blob = new Blob([data], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -127,6 +93,106 @@ function downloadFile(filename: string, content: string, mime: string) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+// Buat file .xlsx: angka asli (bukan teks), tanggal asli, lebar kolom pas, header berwarna,
+// dan baris total memakai rumus supaya ikut berubah kalau pengguna mengedit sel.
+// Paket dimuat saat tombol ditekan supaya halaman tetap ringan.
+async function exportExcel(rows: FinanceEntry[], month: string, businessName: string, income: number, expense: number) {
+  const ExcelJS = (await import("exceljs")).default;
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Catatan keuangan", {
+    views: [{ state: "frozen", ySplit: 3 }],
+    pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+
+  ws.columns = [
+    { key: "date", width: 13 },
+    { key: "type", width: 14 },
+    { key: "desc", width: 38 },
+    { key: "cat", width: 18 },
+    { key: "qty", width: 10 },
+    { key: "unit", width: 18 },
+    { key: "total", width: 18 },
+  ];
+
+  // Judul
+  ws.mergeCells("A1:G1");
+  const title = ws.getCell("A1");
+  title.value = `Catatan Keuangan${businessName ? ` ${businessName}` : ""} - ${monthLabel(month)}`;
+  title.font = { bold: true, size: 14, color: { argb: "FF065F46" } };
+  title.alignment = { vertical: "middle" };
+  ws.getRow(1).height = 26;
+
+  // Header tabel (baris 3)
+  const head = ws.getRow(3);
+  head.values = ["Tanggal", "Jenis", "Deskripsi", "Kategori", "Jumlah", "Harga satuan", "Total"];
+  head.height = 22;
+  head.eachCell((cell, col) => {
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF059669" } };
+    cell.alignment = { vertical: "middle", horizontal: col >= 5 ? "right" : "left" };
+  });
+
+  // Data (mulai baris 4)
+  const first = 4;
+  rows.forEach((e, i) => {
+    const r = ws.getRow(first + i);
+    r.values = [
+      new Date(e.entryDate),
+      e.type === "INCOME" ? "Pemasukan" : "Pengeluaran",
+      e.description,
+      e.category ?? "",
+      e.quantity ?? null,
+      e.unitPrice ?? null,
+      e.amount,
+    ];
+    r.getCell(1).numFmt = "dd/mm/yyyy";
+    r.getCell(1).alignment = { horizontal: "left" };
+    r.getCell(3).alignment = { wrapText: true, vertical: "top" };
+    r.getCell(5).numFmt = "#,##0";
+    r.getCell(6).numFmt = RP_FORMAT;
+    r.getCell(7).numFmt = RP_FORMAT;
+    r.getCell(2).font = { color: { argb: e.type === "INCOME" ? "FF059669" : "FFB45309" }, bold: true };
+    if (i % 2 === 1) {
+      r.eachCell({ includeEmpty: true }, (c) => {
+        c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF9FAFB" } };
+      });
+    }
+  });
+
+  const last = first + rows.length - 1;
+
+  // Garis tipis untuk tabel
+  for (let r = 3; r <= last; r++) {
+    for (let c = 1; c <= 7; c++) {
+      ws.getRow(r).getCell(c).border = { bottom: { style: "thin", color: { argb: "FFE5E7EB" } } };
+    }
+  }
+  ws.autoFilter = { from: "A3", to: `G${last}` };
+
+  // Total dengan rumus (nilai hasil ikut disimpan supaya tampil di semua aplikasi)
+  const t1 = last + 2;
+  const t2 = last + 3;
+  const t3 = last + 4;
+  const totals: [number, string, ExcelJS.CellValue][] = [
+    [t1, "Total pemasukan", { formula: `SUMIF(B${first}:B${last},"Pemasukan",G${first}:G${last})`, result: income }],
+    [t2, "Total pengeluaran", { formula: `SUMIF(B${first}:B${last},"Pengeluaran",G${first}:G${last})`, result: expense }],
+    [t3, "Laba", { formula: `G${t1}-G${t2}`, result: income - expense }],
+  ];
+  for (const [rowNo, label, value] of totals) {
+    const r = ws.getRow(rowNo);
+    r.getCell(6).value = label;
+    r.getCell(6).font = { bold: true };
+    r.getCell(6).alignment = { horizontal: "right" };
+    r.getCell(7).value = value;
+    r.getCell(7).numFmt = RP_FORMAT;
+    r.getCell(7).font = { bold: true, size: rowNo === t3 ? 12 : 11 };
+  }
+  ws.getCell(`G${t3}`).border = { top: { style: "thin" }, bottom: { style: "double" } };
+
+  const buffer = await wb.xlsx.writeBuffer();
+  saveBlob(`catatan-keuangan-${month}.xlsx`, buffer, XLSX_MIME);
 }
 
 // Kotak ikon berwarna, sama dengan kartu di landing page.
@@ -156,6 +222,7 @@ export default function DataUsaha() {
   const [entries, setEntries] = useState<FinanceEntry[]>([]);
   const [entriesLoading, setEntriesLoading] = useState(true);
   const [entriesError, setEntriesError] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   const [profile, setProfile] = useState<Business>(emptyProfile);
   const [profileLoading, setProfileLoading] = useState(true);
@@ -216,11 +283,19 @@ export default function DataUsaha() {
   const expense = monthEntries.filter((e) => e.type === "EXPENSE").reduce((s, e) => s + e.amount, 0);
   const profit = income - expense;
 
-  function exportCsv() {
-    if (monthEntries.length === 0) return;
-    // Urut dari tanggal terlama supaya enak dibaca sebagai pembukuan.
-    const rows = [...monthEntries].sort((a, b) => a.entryDate.localeCompare(b.entryDate));
-    downloadFile(`catatan-keuangan-${month}.csv`, buildCsv(rows, income, expense), "text/csv;charset=utf-8");
+  async function handleExport() {
+    if (exporting || monthEntries.length === 0) return;
+    setExporting(true);
+    setEntriesError("");
+    try {
+      // Urut dari tanggal terlama supaya enak dibaca sebagai pembukuan.
+      const rows = [...monthEntries].sort((a, b) => a.entryDate.localeCompare(b.entryDate));
+      await exportExcel(rows, month, profile.name.trim(), income, expense);
+    } catch {
+      setEntriesError("File Excel tidak bisa dibuat. Coba lagi.");
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function removeEntry(e: FinanceEntry) {
@@ -330,14 +405,14 @@ export default function DataUsaha() {
               </div>
               <button
                 type="button"
-                onClick={exportCsv}
-                disabled={entriesLoading || monthEntries.length === 0}
+                onClick={handleExport}
+                disabled={entriesLoading || exporting || monthEntries.length === 0}
                 className={`inline-flex shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 text-sm font-medium text-gray-800 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white ${focusRing}`}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d={ICON.download} />
                 </svg>
-                Unduh CSV
+                {exporting ? "Menyiapkan…" : "Unduh Excel"}
               </button>
             </div>
 
