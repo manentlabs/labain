@@ -4,9 +4,6 @@ import { reserveUsage, refundUsage } from "@/app/lib/usage";
 import { prisma } from "@/app/lib/prisma";
 import { resolveUserId } from "@/app/lib/getUserId";
 import OpenAI from "openai";
-import { writeFile, mkdir } from "fs/promises";
-import { randomUUID } from "crypto";
-import path from "path";
 
 export const maxDuration = 60; // pembuatan gambar bisa memakan 20-40 detik
 
@@ -18,7 +15,6 @@ export const maxDuration = 60; // pembuatan gambar bisa memakan 20-40 detik
    - MAX_TOOL_CALLS  : jumlah tool yang dijalankan per pesan.
    - MAX_ENTRIES     : jumlah catatan keuangan per pemanggilan record_finance.
    - MAX_AMOUNT      : batas nilai Int di MySQL (sekitar 2,1 miliar).
-   - UPLOAD_DIR      : folder permanen untuk gambar hasil (atur env UPLOAD_DIR di Hostinger).
 ---------------------------------------------------------- */
 const MAX_HISTORY = 20;
 const MAX_LENGTH = 1000;
@@ -27,8 +23,6 @@ const MAX_TOOL_CALLS = 4;
 const MAX_ENTRIES = 20;
 const MAX_AMOUNT = 2_000_000_000;
 const DEFAULT_PHOTO_PROMPT = "Buatkan foto produk yang menarik dari foto ini.";
-const UPLOAD_DIR =
-  process.env.UPLOAD_DIR || path.join(process.cwd(), "storage", "images");
 
 const SYSTEM_PROMPT = `Kamu adalah Labain, asisten AI untuk pelaku UMKM Indonesia. Semua kebutuhan pengguna dikerjakan langsung di percakapan ini. Jangan pernah menyuruh pengguna pindah halaman atau membuka fitur lain.
 
@@ -220,9 +214,9 @@ function buildSystemPrompt(business, today) {
 
 /* ---------------- Gambar ---------------- */
 
-// Buat gambar dan simpan sebagai PNG di folder permanen, kembalikan URL-nya.
-// File disajikan oleh app/api/images/[file]/route.js
-async function generateImage(openai, prompt, prefix) {
+// Buat gambar, simpan ke tabel Image di database, kembalikan URL-nya.
+// Gambar disajikan oleh app/api/images/[file]/route.js
+async function generateImage(openai, prompt, userId) {
   const result = await openai.images.generate({
     model: "gpt-image-1",
     prompt: prompt.slice(0, 900).trimEnd(),
@@ -234,11 +228,11 @@ async function generateImage(openai, prompt, prefix) {
   const b64 = result.data?.[0]?.b64_json;
   if (!b64) throw new Error("Tidak ada data gambar");
 
-  await mkdir(UPLOAD_DIR, { recursive: true });
-
-  const filename = `${prefix}-${randomUUID()}.png`;
-  await writeFile(path.join(UPLOAD_DIR, filename), Buffer.from(b64, "base64"));
-  return `/api/images/${filename}`;
+  const img = await prisma.image.create({
+    data: { userId, data: Buffer.from(b64, "base64") },
+    select: { id: true },
+  });
+  return `/api/images/${img.id}`;
 }
 
 /* ---------------- Tool ---------------- */
@@ -254,7 +248,7 @@ async function runToolInner(ctx, name, args) {
         const full =
           `${prompt}, isolated on pure white background, flat vector, ` +
           "no gradients, no shadows, no 3D effects, professional branding";
-        const url = await generateImage(openai, full, "logo");
+        const url = await generateImage(openai, full, userId);
         return {
           result: "Berhasil. Logo sudah dibuat dan ditampilkan ke pengguna.",
           image: { url, label: "Logo" },
@@ -273,7 +267,7 @@ async function runToolInner(ctx, name, args) {
         const full =
           `${prompt}, ultra sharp, product in perfect focus, photorealistic, ` +
           "no text overlays, no watermarks, shot on professional camera, commercial advertising quality";
-        const url = await generateImage(openai, full, "foto-produk");
+        const url = await generateImage(openai, full, userId);
         return {
           result: "Berhasil. Foto produk sudah dibuat dan ditampilkan ke pengguna.",
           image: { url, label: "Foto produk" },

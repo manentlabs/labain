@@ -149,3 +149,12 @@ model FinanceEntry {
   @@index([userId, entryDate])
   @@index([userId, type, entryDate])
 }
+
+model Image {
+  id        String   @id @default(cuid())
+  userId    String
+  data      Bytes    @db.LongBlob
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
